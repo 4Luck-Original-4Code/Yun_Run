@@ -32,13 +32,13 @@ class Config:
     REQUEST_TIMEOUT = 30
     MAX_RETRY = 3
     RETRY_DELAY = 2
-    
+
     # 时间段步数配置（手动触发）
     MANUAL_STEP_RANGES = {
-        'morning': (10000, 20000),    # 6-12点
+        'morning': (10000, 20000),  # 6-12点
         'afternoon': (21000, 30000),  # 13-18点
-        'evening': (31000, 35000),    # 19-24点
-        'night': (10000, 20000)       # 1-5点
+        'evening': (31000, 35000),  # 19-24点
+        'night': (10000, 20000)  # 1-5点
     }
 
 
@@ -100,9 +100,9 @@ def fake_ip() -> str:
 def desensitize_user_name(user: str) -> str:
     """账号脱敏显示"""
     if not user:
-        return "None"  
+        return "None"
     length = len(user)
-    if length < 3:  
+    if length < 3:
         return "请配置正确的手机号或者邮箱"
     return "*" * (length - 2) + user[-2:]
 
@@ -144,14 +144,14 @@ def server_send(title: str, body: str, sckey: str = None):
     """
     if not sckey or sckey.upper() == 'NO':
         return
-    
+
     server_url = f"https://sctapi.ftqq.com/{sckey}.send"
-    
+
     data = {
         'text': title,
         'desp': body
     }
-    
+
     try:
         response = requests.post(server_url, data=data, timeout=Config.REQUEST_TIMEOUT)
         if response.status_code == 200:
@@ -175,18 +175,18 @@ def prepare_user_tokens() -> Dict:
     if not os.path.exists(Config.TOKEN_FILE):
         print(f"[信息] Token缓存文件不存在，将创建新文件")
         return {}
-    
+
     try:
         with open(Config.TOKEN_FILE, 'rb') as f:
             encrypted_data = f.read()
-        
+
         if not encrypted_data:
             print(f"[警告] Token缓存文件为空")
             return {}
-        
+
         decrypted_data = decrypt_data(encrypted_data, get_aes_key(), None)
         tokens = json.loads(decrypted_data.decode('utf-8', errors='strict'))
-        
+
         print(f"[成功] 已加载 {len(tokens)} 个账号的Token缓存")
         return tokens
     except json.JSONDecodeError as e:
@@ -205,10 +205,10 @@ def persist_user_tokens(user_tokens: Dict) -> bool:
     try:
         origin_str = json.dumps(user_tokens, ensure_ascii=False, indent=2)
         encrypted_data = encrypt_data(origin_str.encode("utf-8"), get_aes_key(), None)
-        
+
         with open(Config.TOKEN_FILE, 'wb') as f:
             f.write(encrypted_data)
-        
+
         print(f"[成功] Token已加密保存（{len(user_tokens)} 个账号）")
         return True
     except Exception as e:
@@ -221,7 +221,7 @@ def persist_user_tokens(user_tokens: Dict) -> bool:
 
 class ZeppStepRunner:
     """Zepp刷步数执行器"""
-    
+
     def __init__(self, user: str, password: str, user_tokens: Dict):
         self.user_id = None
         self.device_id = str(uuid.uuid4())
@@ -231,30 +231,30 @@ class ZeppStepRunner:
         self.error = None
         self.actual_step = 0
         self.login_failure_count = 0
-        
+
         # 参数校验
         user = str(user).strip()
         password = str(password).strip()
-        
+
         if not user or not password:
             self.error = "[失败] 用户名或密码为空"
             self.invalid = True
             return
-        
+
         # 存储密码用于登录，但不长期保存明文
         self._password = password
-        
+
         # 处理用户名格式
         if not (user.startswith("+86") or "@" in user):
             user = "+86" + user
-        
+
         self.is_phone = user.startswith("+86")
         self.user = user
-        
+
         # 生成虚拟IP
         self.fake_ip_addr = fake_ip()
         self.log_str += f"[虚拟IP] {self.fake_ip_addr}\n"
-    
+
     def login(self, retry_count=0) -> Optional[str]:
         """
         登录并获取app_token
@@ -265,7 +265,7 @@ class ZeppStepRunner:
         if retry_count > 0:
             self.log_str += f"[重试] 第{retry_count}次登录尝试，跳过缓存，重新获取密钥\n"
             return self._full_login_process(retry_count)
-        
+
         user_token_info = self.user_tokens.get(self.user)
 
         # 尝试使用缓存的Token
@@ -305,7 +305,8 @@ class ZeppStepRunner:
 
             # 尝试用access_token刷新login_token
             try:
-                login_token, app_token, user_id, msg = zeppHelper.grant_login_tokens(access_token, self.device_id, self.is_phone)
+                login_token, app_token, user_id, msg = zeppHelper.grant_login_tokens(access_token, self.device_id,
+                                                                                     self.is_phone)
                 if login_token:
                     user_token_info["login_token"] = login_token
                     user_token_info["login_token_time"] = get_timestamp()
@@ -338,13 +339,14 @@ class ZeppStepRunner:
 
         # 使用access_token获取login_token等
         try:
-            login_token, app_token, user_id, msg = zeppHelper.grant_login_tokens(access_token, self.device_id, self.is_phone)
+            login_token, app_token, user_id, msg = zeppHelper.grant_login_tokens(access_token, self.device_id,
+                                                                                 self.is_phone)
             if not login_token:
                 self.log_str += f"[失败] 获取login_token失败: {msg}\n"
                 self.error = f"获取login_token失败: {msg}"
                 self.invalid = True
                 return None
-            
+
             self.user_id = user_id
             self.user_tokens[self.user] = {
                 "access_token": access_token,
@@ -369,12 +371,12 @@ class ZeppStepRunner:
         完整的登录流程，不使用缓存
         """
         self.log_str += f"[登录] 开始第{retry_count}次重新登录流程，重新获取密钥并清空缓存\n"
-        
+
         # 重新获取AES密钥（可能环境变量已更新）
         from util.aes_help import get_aes_key
         new_aes_key = get_aes_key()
         self.log_str += f"[密钥] 重新获取AES密钥完成\n"
-        
+
         # 清除当前用户的缓存token，强制重新获取
         if self.user in self.user_tokens:
             original_cache = dict(self.user_tokens[self.user])
@@ -382,7 +384,7 @@ class ZeppStepRunner:
             self.log_str += f"[缓存] 已清除用户 {self.user} 的旧缓存\n"
         else:
             self.log_str += f"[缓存] 用户 {self.user} 无旧缓存\n"
-        
+
         # 直接进行完整登录流程
         try:
             access_token, msg = zeppHelper.login_access_token(self.user, self._password)
@@ -396,11 +398,12 @@ class ZeppStepRunner:
 
         # 使用access_token获取login_token等
         try:
-            login_token, app_token, user_id, msg = zeppHelper.grant_login_tokens(access_token, self.device_id, self.is_phone)
+            login_token, app_token, user_id, msg = zeppHelper.grant_login_tokens(access_token, self.device_id,
+                                                                                 self.is_phone)
             if not login_token:
                 self.log_str += f"[失败] 获取login_token失败: {msg}\n"
                 return None
-            
+
             self.user_id = user_id
             # 更新缓存中的token
             self.user_tokens[self.user] = {
@@ -426,9 +429,9 @@ class ZeppStepRunner:
         """
         if self.invalid:
             return self.error, False
-        
+
         app_token = None  # 初始化变量
-        
+
         # 实现新的重试逻辑：失败后重新获取密钥并从头开始登录
         for attempt in range(Config.MAX_RETRY):
             # 第一次尝试使用缓存逻辑，后续失败的重试直接重新登录并清空缓存
@@ -436,7 +439,7 @@ class ZeppStepRunner:
                 app_token = self.login(retry_count=0)  # 首次尝试使用缓存逻辑
             else:
                 app_token = self._full_login_process(retry_count=attempt)  # 后续重试不使用缓存
-            
+
             if not app_token:
                 self.login_failure_count += 1
                 if attempt < Config.MAX_RETRY - 1:
@@ -451,80 +454,81 @@ class ZeppStepRunner:
                 # 登录成功，跳出循环
                 self.login_failure_count = 0
                 break
-        
+
         # 如果到这里还没有成功获取app_token，说明登录失败
         if not app_token:
             if sckey and sckey.upper() != 'NO':
                 self._send_login_failure_notification(sckey)
             return self.error or "[失败] 登录失败", False
-        
+
         # 生成随机步数
         step = random.randint(min_step, max_step)
         self.actual_step = step
-        
+
         self.log_str += f"[随机步数] 范围: {min_step}~{max_step}，生成步数: {step}\n"
-        
+
         # ================= 步数更新重试机制 =================
-    for attempt in range(Config.MAX_RETRY):
-        try:
-            # 发送步数更新请求
-            ok, msg = zeppHelper.update_step(app_token, self.user_id, step, self.fake_ip_addr)
-            if ok:
-                return f"[成功] {msg} | 步数: {step}", True
-            
-            self.log_str += f"[失败] 第{attempt+1}次尝试: {msg}\n"
-            
-            # 智能判断：如果是Token失效/未授权，尝试重新走一次完整登录
-            # 判断条件根据 zeppHelper 实际返回的 msg 关键字进行调整
-            if msg and any(k in msg.lower() for k in ['token', 'auth', '未授权', '登录', '失效']):
-                self.log_str += f"[警告] 提交时发现Token可能失效，尝试重新获取密钥...\n"
-                app_token = self._full_login_process(retry_count=attempt+1)
-                if not app_token:
-                    self.log_str += f"[失败] 重新获取Token失败，放弃步数提交\n"
-                    break  # 重新登录都失败了，直接跳出重试
-                continue   # 拿到新Token后，直接进入下一次循环重试提交
-                
-        except Exception as e:
-            self.log_str += f"[异常] 第{attempt+1}次尝试异常: {str(e)}\n"
-        
-        # 如果还没达到最大重试次数，则进行等待
-        if attempt < Config.MAX_RETRY - 1:
-            # 指数退避 + 随机抖动
-            delay = Config.RETRY_DELAY * (2 ** attempt) + random.uniform(0, 1)
-            self.log_str += f"[重试] 网络波动，等待 {delay:.1f} 秒后重试...\n"
-            time.sleep(delay)
+        for attempt in range(Config.MAX_RETRY):
+            try:
+                # 发送步数更新请求
+                ok, msg = zeppHelper.update_step(app_token, self.user_id, step, self.fake_ip_addr)
+                if ok:
+                    return f"[成功] {msg} | 步数: {step}", True
     
-    return "[失败] 达到最大重试次数，步数更新未成功", False
+                self.log_str += f"[失败] 第{attempt + 1}次尝试: {msg}\n"
+    
+                # 智能判断：如果是Token失效/未授权，尝试重新走一次完整登录
+                # 判断条件根据 zeppHelper 实际返回的 msg 关键字进行调整
+                if msg and any(k in msg.lower() for k in ['token', 'auth', '未授权', '登录', '失效']):
+                    self.log_str += f"[警告] 提交时发现Token可能失效，尝试重新获取密钥...\n"
+                    app_token = self._full_login_process(retry_count=attempt + 1)
+                    if not app_token:
+                        self.log_str += f"[失败] 重新获取Token失败，放弃步数提交\n"
+                        break  # 重新登录都失败了，直接跳出重试
+                    continue  # 拿到新Token后，直接进入下一次循环重试提交
+    
+            except Exception as e:
+                self.log_str += f"[异常] 第{attempt + 1}次尝试异常: {str(e)}\n"
+    
+            # 如果还没达到最大重试次数，则进行等待
+            if attempt < Config.MAX_RETRY - 1:
+                # 指数退避 + 随机抖动
+                delay = Config.RETRY_DELAY * (2 ** attempt) + random.uniform(0, 1)
+                self.log_str += f"[重试] 网络波动，等待 {delay:.1f} 秒后重试...\n"
+                time.sleep(delay)
+    
+            return "[失败] 达到最大重试次数，步数更新未成功", False
+
 
 def _send_login_failure_notification(self, sckey: str):
     """发送登录失败通知"""
     current_time = format_now()
     title = "刷步失败通知"
     body = f"{current_time}\n\n登录失败 | 账号: {desensitize_user_name(self.user)}\n原因: 连续3次登录尝试均失败"
-    
+
     print(f"[信息] 推送登录失败通知...", flush=True)
     server_send(title, body, sckey)
 
 
 # ==================== 主执行函数 ====================
 
-def run_single_account(user: str, password: str, 
-                      min_step: int, max_step: int, user_tokens: Dict, sckey: str = None) -> Dict:
+def run_single_account(user: str, password: str,
+                       min_step: int, max_step: int, user_tokens: Dict, sckey: str = None) -> Dict:
     """
     执行单个账号的刷步数任务
     """
-    log_str = f"\n{'='*60}\n"
+    log_str = f"\n{'=' * 60}\n"
     log_str += f"[时间] {format_now()}\n"
     log_str += f"账号: {desensitize_user_name(user)}\n"
-    log_str += f"{'='*60}\n"
-    
+    log_str += f"{'=' * 60}\n"
+
     try:
         runner = ZeppStepRunner(user, password, user_tokens)
         exec_msg, success = runner.execute(min_step, max_step, sckey)
-        
+
         log_str += runner.log_str
         log_str += f"{exec_msg}\n"
-        
+
         exec_result = {
             "user": desensitize_user_name(user),
             "success": success,
@@ -535,27 +539,27 @@ def run_single_account(user: str, password: str,
         error_msg = f"[异常] {str(e)}"
         log_str += error_msg + "\n"
         log_str += traceback.format_exc()
-        
+
         exec_result = {
             "user": desensitize_user_name(user),
             "success": False,
             "msg": f"执行异常: {str(e)}"
         }
-    
+
     print(log_str, flush=True)
     return exec_result
 
 
 def execute_all_accounts(users: str, passwords: str, min_step: int, max_step: int,
-                        user_tokens: Dict, sckey: str = None) -> List[Dict]:
+                         user_tokens: Dict, sckey: str = None) -> List[Dict]:
     """执行所有账号的刷步数任务（简化成单账号）"""
     user_list = [u.strip() for u in users.split('#') if u.strip()]
     passwd_list = [p.strip() for p in passwords.split('#') if p.strip()]
-    
+
     if len(user_list) != len(passwd_list):
         print(f"[错误] 账号数[{len(user_list)}]和密码数[{len(passwd_list)}]不匹配", flush=True)
         return []
-    
+
     # 假设只用第一个账号
     user = user_list[0]
     passwd = passwd_list[0]
@@ -598,42 +602,42 @@ def push_notification(exec_results: List[Dict], sckey: str = None):
 
 def main():
     """主函数 - 直接读取环境变量"""
-    print(f"\n{'='*60}", flush=True)
+    print(f"\n{'=' * 60}", flush=True)
     print(f"Zepp自动刷步数程序", flush=True)
     print(f"执行时间: {format_now()}", flush=True)
     print(f"触发方式: {'手动触发' if is_manual_trigger() else '自动触发'}", flush=True)
-    print(f"{'='*60}\n", flush=True)
-    
+    print(f"{'=' * 60}\n", flush=True)
+
     # 直接读取环境变量
     users = os.environ.get('ZEPP_USER', '').strip()
     passwords = os.environ.get('ZEPP_PWD', '').strip()
     sckey = os.environ.get('SCKEY', '').strip()
-    
+
     # 验证必需参数
     print("[检查] 环境变量配置...", flush=True)
     print(f"  - USER存在: {bool(users)}", flush=True)
     print(f"  - PWD存在: {bool(passwords)}", flush=True)
     print(f"  - SCKEY存在: {bool(sckey)}", flush=True)
     print(f"  - AES_KEY存在: {bool(os.environ.get('AES_KEY'))}\n", flush=True)
-    
+
     if not users or not passwords:
         print("[错误] 缺少必需的环境变量: USER 或 PWD", flush=True)
         sys.exit(1)
-    
+
     # 验证账号密码数量
     user_list = [u.strip() for u in users.split('#') if u.strip()]
     passwd_list = [p.strip() for p in passwords.split('#') if p.strip()]
-    
+
     if len(user_list) != len(passwd_list):
         print(f"[错误] 账号数量({len(user_list)})与密码数量({len(passwd_list)})不匹配", flush=True)
         sys.exit(1)
-    
+
     print(f"[成功] 配置验证通过（{len(user_list)} 个账号）\n", flush=True)
-    
+
     # 加载Token缓存
     user_tokens = {}
     aes_key = get_aes_key()
-    
+
     if aes_key:
         try:
             user_tokens = prepare_user_tokens()
@@ -642,44 +646,43 @@ def main():
             user_tokens = {}
     else:
         print("[警告] 未设置AES_KEY，无法使用Token缓存功能", flush=True)
-    
+
     # 计算步数范围
     min_step, max_step = get_min_max_by_time()
     print(f"[信息] 步数范围: {min_step} ~ {max_step}", flush=True)
     print(f"[信息] 推送通知: {'已启用' if sckey and sckey != 'NO' else '未启用'}\n", flush=True)
-    
+
     # 执行刷步数
     try:
         exec_results = execute_all_accounts(
-            users, passwords, min_step, max_step, 
+            users, passwords, min_step, max_step,
             user_tokens, sckey
         )
     except Exception as e:
         print(f"\n[错误] 执行过程中发生异常: {str(e)}", flush=True)
         traceback.print_exc()
         sys.exit(1)
-    
+
     # 保存Token
     if aes_key and user_tokens:
         try:
             persist_user_tokens(user_tokens)
         except Exception as e:
             print(f"[警告] Token保存失败: {str(e)}", flush=True)
-    
+
     # 统计结果
     total = len(exec_results)
     success_count = sum(1 for r in exec_results if r.get('success'))
     fail_count = total - success_count
     total_steps = sum(r.get('step', 0) for r in exec_results if r.get('success'))
-    
-    
+
     # 推送通知：只在自动运行且当前小时为19时推送
     if sckey and sckey.upper() != 'NO' and not is_manual_trigger() and get_beijing_time().hour == 19:
         try:
             push_notification(exec_results, sckey)
         except Exception as e:
             print(f"[警告] 推送通知失败: {str(e)}", flush=True)
-    
+
     # 返回退出码
     sys.exit(0 if fail_count == 0 else 1)
 
