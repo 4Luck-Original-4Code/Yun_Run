@@ -464,30 +464,46 @@ class ZeppStepRunner:
         
         self.log_str += f"[随机步数] 范围: {min_step}~{max_step}，生成步数: {step}\n"
         
-        # 步数更新重试机制
-        for attempt in range(Config.MAX_RETRY):
-            try:
-                ok, msg = zeppHelper.update_step(app_token, self.user_id, step, self.fake_ip_addr)
-                if ok:
-                    return f"[成功] {msg} | 步数: {step}", True
-                self.log_str += f"[失败] 第{attempt+1}次尝试: {msg}\n"
-            except Exception as e:
-                self.log_str += f"[异常] 第{attempt+1}次尝试异常: {str(e)}\n"
+        # ================= 步数更新重试机制 =================
+    for attempt in range(Config.MAX_RETRY):
+        try:
+            # 发送步数更新请求
+            ok, msg = zeppHelper.update_step(app_token, self.user_id, step, self.fake_ip_addr)
+            if ok:
+                return f"[成功] {msg} | 步数: {step}", True
             
-            if attempt < Config.MAX_RETRY - 1:
-                self.log_str += f"[重试] {Config.RETRY_DELAY}秒后重试...\n"
-                time.sleep(Config.RETRY_DELAY)
+            self.log_str += f"[失败] 第{attempt+1}次尝试: {msg}\n"
+            
+            # 智能判断：如果是Token失效/未授权，尝试重新走一次完整登录
+            # 判断条件根据 zeppHelper 实际返回的 msg 关键字进行调整
+            if msg and any(k in msg.lower() for k in ['token', 'auth', '未授权', '登录', '失效']):
+                self.log_str += f"[警告] 提交时发现Token可能失效，尝试重新获取密钥...\n"
+                app_token = self._full_login_process(retry_count=attempt+1)
+                if not app_token:
+                    self.log_str += f"[失败] 重新获取Token失败，放弃步数提交\n"
+                    break  # 重新登录都失败了，直接跳出重试
+                continue   # 拿到新Token后，直接进入下一次循环重试提交
+                
+        except Exception as e:
+            self.log_str += f"[异常] 第{attempt+1}次尝试异常: {str(e)}\n"
         
-        return "[失败] 达到最大重试次数", False
+        # 如果还没达到最大重试次数，则进行等待
+        if attempt < Config.MAX_RETRY - 1:
+            # 指数退避 + 随机抖动
+            delay = Config.RETRY_DELAY * (2 ** attempt) + random.uniform(0, 1)
+            self.log_str += f"[重试] 网络波动，等待 {delay:.1f} 秒后重试...\n"
+            time.sleep(delay)
+    
+    return "[失败] 达到最大重试次数，步数更新未成功", False
 
-    def _send_login_failure_notification(self, sckey: str):
-        """发送登录失败通知"""
-        current_time = format_now()
-        title = "刷步失败通知"
-        body = f"{current_time}\n\n登录失败 | 账号: {desensitize_user_name(self.user)}\n原因: 连续3次登录尝试均失败"
-        
-        print(f"[信息] 推送登录失败通知...", flush=True)
-        server_send(title, body, sckey)
+def _send_login_failure_notification(self, sckey: str):
+    """发送登录失败通知"""
+    current_time = format_now()
+    title = "刷步失败通知"
+    body = f"{current_time}\n\n登录失败 | 账号: {desensitize_user_name(self.user)}\n原因: 连续3次登录尝试均失败"
+    
+    print(f"[信息] 推送登录失败通知...", flush=True)
+    server_send(title, body, sckey)
 
 
 # ==================== 主执行函数 ====================
