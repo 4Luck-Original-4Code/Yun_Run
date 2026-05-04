@@ -61,7 +61,7 @@ jobs:
         ZEPP_USER: ${{ secrets.ZEPP_USER }}          # 账号
         ZEPP_PWD: ${{ secrets.ZEPP_PWD }}            # 密码
         SCKEY: ${{ secrets.SCKEY }}                  # Server酱推送密钥（可选）
-        AES_KEY: ${{ secrets.AES_KEY }}              # AES加密密钥（建议设置）
+        AES_KEY: ${{ secrets.AES_KEY }}              # AES加密密钥（必须）
       run: |
         python main.py
         
@@ -72,5 +72,5 @@ jobs:
       with:
         name: encrypted-tokens
         path: encrypted_tokens.data
-        retention-days: 30
+        retention-days: 1                            #保存天数
         if-no-files-found: ignore
