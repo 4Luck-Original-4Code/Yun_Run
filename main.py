@@ -36,8 +36,8 @@ class Config:
     # 时间段步数配置（手动触发）
     MANUAL_STEP_RANGES = {
         'morning': (10000, 20000),  # 6-12点
-        'afternoon': (21000, 30000),  # 13-18点
-        'evening': (31000, 35000),  # 19-24点
+        # '': (21000, 30000),  # 13-18点
+        'evening': (31000, 35000),  # 18-24点
         'night': (10000, 20000)  # 1-5点
     }
 
@@ -115,7 +115,7 @@ def is_manual_trigger() -> bool:
 def get_min_max_by_time(hour: int = None, minute: int = None) -> Tuple[int, int]:
     """
     根据当前北京时间智能计算步数范围
-    统一使用时间段范围（手动/自动相同），晚上19-24点: 31000-35000
+    统一使用时间段范围（手动/自动相同），晚上18-24点: 31000-35000
     """
     if hour is None:
         hour = get_beijing_time().hour
@@ -127,9 +127,9 @@ def get_min_max_by_time(hour: int = None, minute: int = None) -> Tuple[int, int]
         return Config.MANUAL_STEP_RANGES['night']
     elif 6 <= hour <= 12:
         return Config.MANUAL_STEP_RANGES['morning']
-    elif 13 <= hour <= 18:
-        return Config.MANUAL_STEP_RANGES['afternoon']
-    elif 19 <= hour <= 23 or hour == 0:
+    # elif 13 <= hour <= 18:
+    #     return Config.MANUAL_STEP_RANGES['afternoon']
+    elif 18 <= hour <= 23 or hour == 0:
         return Config.MANUAL_STEP_RANGES['evening']
     else:
         return Config.DEFAULT_MIN_STEP, Config.DEFAULT_MAX_STEP
