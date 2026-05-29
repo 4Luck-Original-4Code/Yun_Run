@@ -70,5 +70,5 @@ jobs:
       with:
         name: encrypted-tokens
         path: encrypted_tokens.data
-        retention-days: 1                            #保存天数
+        retention-days: 7                            #保存天数
         if-no-files-found: ignore
