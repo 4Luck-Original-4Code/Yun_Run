@@ -1,0 +1,74 @@
+name: 刷步数
+
+on:
+  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      manual_trigger:
+        description: '手动触发执行'
+        required: false
+        default: 'true'
+  
+  # 每天自动运行2次（北京时间）
+  schedule:
+    # 上午9:00（UTC 1:00）- 不推送通知
+    - cron: '0 1 * * *'
+    # 晚上18:00（UTC 10:00）- 推送通知
+    - cron: '0 10 * * *'
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      
+    - name: 设置Python环境
+      uses: actions/setup-python@v5  
+      with:
+        python-version: '3.10'
+        cache: 'pip'  # 启用pip缓存加速
+    
+    # 下载之前保存的 Token 缓存（如果存在）
+    - name: 下载Token缓存
+      uses: actions/download-artifact@v4
+      with:
+        name: encrypted-tokens
+        path: .
+      continue-on-error: true
+        
+    - name: 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    # 显示环境信息（调试用）
+    - name: 显示环境信息
+      run: |
+        echo "Python版本: $(python --version)"
+        echo "当前时间: $(date)"
+        echo "时区: $(date +%Z)"
+        ls -la
+        
+    - name: 执行刷步数脚本
+      env:
+        ZEPP_USER: ${{ secrets.ZEPP_USER }}          # 账号
+        ZEPP_PWD: ${{ secrets.ZEPP_PWD }}            # 密码
+        SCKEY: ${{ secrets.SCKEY }}                  # Server酱推送密钥（可选）
+        AES_KEY: ${{ secrets.AES_KEY }}              # AES加密密钥（必须）
+      run: |
+        python main.py
+        
+    # 保存Token缓存（用于下次运行）
+    - name: 上传Token缓存
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: encrypted-tokens
+        path: encrypted_tokens.data
+        retention-days: 1                            #保存天数
+        if-no-files-found: ignore
