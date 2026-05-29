@@ -39,14 +39,8 @@ def login_access_token(user, password) -> (str | None, str | None):
     query = urllib.parse.urlencode(login_data)
     plaintext = query.encode('utf-8')
     
-    # 检查加密参数
-    print(f"[加密] 明文长度: {len(plaintext)} 字节")
-    print(f"[加密] 密钥长度: {len(HM_AES_KEY)} 字节")
-    print(f"[加密] IV长度: {len(HM_AES_IV)} 字节")
-    
     try:
         cipher_data = encrypt_data(plaintext, HM_AES_KEY, HM_AES_IV)
-        print(f"[加密] 密文长度: {len(cipher_data)} 字节")
     except Exception as e:
         error_msg = f"加密失败: {str(e)}"
         print(f"[错误] {error_msg}")
@@ -58,14 +52,10 @@ def login_access_token(user, password) -> (str | None, str | None):
         r1 = requests.post(url1, data=cipher_data, headers=headers, 
                           allow_redirects=False, timeout=10)
         
-        # print(f"[响应] 状态码: {r1.status_code}")
-        # print(f"[响应] Headers: {dict(r1.headers)}")
-        
         if r1.status_code != 303:
             return None, f"登录异常，status: {r1.status_code}"
             
         location = r1.headers.get("Location", "")
-        # print(f"[重定向] Location: {location[:100]}...")
         
         code = get_access_token(location)
         if code is None:
@@ -78,8 +68,6 @@ def login_access_token(user, password) -> (str | None, str | None):
     except Exception as e:
         error_msg = f"请求异常: {str(e)}"
         print(f"[异常] {error_msg}")
-        import traceback
-        print(f"[堆栈] {traceback.format_exc()[:300]}")
         return None, error_msg
 
 
@@ -158,8 +146,7 @@ def grant_login_tokens(access_token, device_id, is_phone=False) -> (str | None, 
             "source": "com.xiaomi.hm.health:6.14.0:50818",
             "third_name": "email",
         }
-    resp = requests.post(url, data=data, headers=headers).json()
-    # print("请求客户端登录成功：%s" % json.dumps(resp, ensure_ascii=False, indent=2))  #
+    resp = requests.post(url, data=data, headers=headers, timeout=10).json()
     _login_token, _userid, _app_token = None, None, None
     try:
         result = resp.get("result")
@@ -168,8 +155,8 @@ def grant_login_tokens(access_token, device_id, is_phone=False) -> (str | None, 
         _login_token = resp["token_info"]["login_token"]
         _app_token = resp["token_info"]["app_token"]
         _userid = resp["token_info"]["user_id"]
-    except:
-        print("提取login_token失败：%s" % json.dumps(resp, ensure_ascii=False, indent=2))
+    except Exception as e:
+        return None, None, None, f"提取login_token失败: {str(e)}"
     return _login_token, _app_token, _userid, None
 
 
@@ -181,7 +168,7 @@ def grant_app_token(login_token: str) -> (str | None, str | None):
     if resp.status_code != 200:
         return None, "请求异常：%d" % resp.status_code
     resp = resp.json()
-    print("grant_app_token: %s" % json.dumps(resp))
+
 
     result = resp.get("result")
     if result != "ok":
