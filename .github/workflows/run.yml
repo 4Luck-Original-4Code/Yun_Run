@@ -9,14 +9,12 @@ on:
         required: false
         default: 'true'
   
-  # 每天自动运行3次（北京时间）
+  # 每天自动运行2次（北京时间）
   schedule:
     # 上午9:30（UTC 1:30）
     - cron: '00 1 * * *'
-    # 下午15:25（UTC 7:25）
-    - cron: '00 7 * * *'
-    # 晚上19:20（UTC 11:20）
-    - cron: '00 11 * * *'
+    # 晚上18:20（UTC 11:20）
+    - cron: '00 10 * * *'
 
 jobs:
   run-script:
