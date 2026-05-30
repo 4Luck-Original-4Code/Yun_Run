@@ -473,8 +473,6 @@ class ZeppStepRunner:
             step = random.randint(min_step, max_step)
             self.actual_step = step
 
-            self.log_str += f"[随机步数] 范围: {min_step}~{max_step}，生成步数: {step}\n"
-
             # ================= 步数更新重试机制 =================
             update_success = False
             update_msg = ""
