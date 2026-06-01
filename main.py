@@ -124,8 +124,8 @@ def get_min_max_by_time(hour: int = None, minute: int = None) -> Tuple[int, int]
     if 0 <= hour <= 4:
         # UTC 0-4点（北京 8-12点，早上时段）
         return Config.MANUAL_STEP_RANGES['morning']
-    elif 10 <= hour <= 12:
-        # UTC 10-12点（北京 18-20点）
+    elif 10 <= hour <= 14:
+        # UTC 10-14点（北京 18-22点）
         return Config.MANUAL_STEP_RANGES['evening']
     else:
         # UTC 其他时间（北京 其他时段）
@@ -684,10 +684,10 @@ def main():
     fail_count = total - success_count
     total_steps = sum(r.get('step', 0) for r in exec_results if r.get('success'))
 
-    # 推送通知：自动运行时且在UTC 10-12点时段推送（对应北京 18-20点）
+    # 推送通知：自动运行时且在UTC 10-14点时段推送（对应北京 18-22点，允许延迟）
     if sckey and sckey.upper() != 'NO' and not is_manual_trigger():
         current_hour = get_utc_time().hour
-        if 10 <= current_hour <= 12:
+        if 10 <= current_hour <= 14:
             try:
                 push_notification(exec_results, sckey)
             except Exception as e:
