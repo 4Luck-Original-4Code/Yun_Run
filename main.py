@@ -36,7 +36,6 @@ class Config:
     MANUAL_STEP_RANGES = {
         'morning': (10000, 20000),  # 6-12点
         'evening': (31000, 35000),  # 18-24点
-        'night': (10000, 20000)  # 0-5点
     }
 
 
@@ -190,7 +189,7 @@ def prepare_user_tokens(aes_key: bytes = None) -> Dict:
         if aes_key is None:
             from util.aes_help import get_aes_key
             aes_key = get_aes_key()
-        
+
         decrypted_data = decrypt_data(encrypted_data, aes_key, None)
         tokens = json.loads(decrypted_data.decode('utf-8', errors='strict'))
 
@@ -478,7 +477,7 @@ class ZeppStepRunner:
             # ================= 步数更新重试机制 =================
             update_success = False
             update_msg = ""
-            
+
             for attempt in range(Config.MAX_RETRY):
                 try:
                     # 发送步数更新请求
@@ -487,9 +486,9 @@ class ZeppStepRunner:
                         update_success = True
                         update_msg = msg
                         break
-        
+
                     self.log_str += f"[失败] 第{attempt + 1}次尝试: {msg}\n"
-        
+
                     # 智能判断：如果是Token失效/未授权，尝试重新走一次完整登录
                     # 判断条件根据 zeppHelper 实际返回的 msg 关键字进行调整
                     if msg and any(k in msg.lower() for k in ['token', 'auth', '未授权', '登录', '失效']):
@@ -499,17 +498,17 @@ class ZeppStepRunner:
                             self.log_str += f"[失败] 重新获取Token失败，放弃步数提交\n"
                             break  # 重新登录都失败了，直接跳出重试
                         continue  # 拿到新Token后，直接进入下一次循环重试提交
-        
+
                 except Exception as e:
                     self.log_str += f"[异常] 第{attempt + 1}次尝试异常: {str(e)}\n"
-        
+
                 # 如果还没达到最大重试次数，则进行等待
                 if attempt < Config.MAX_RETRY - 1:
                     # 指数退避 + 随机抖动
                     delay = Config.RETRY_DELAY * (2 ** attempt) + random.uniform(0, 1)
                     self.log_str += f"[重试] 网络波动，等待 {delay:.1f} 秒后重试...\n"
                     time.sleep(delay)
-            
+
             if update_success:
                 return f"[成功] {update_msg} | 步数: {step}", True
             else:
@@ -685,10 +684,10 @@ def main():
     fail_count = total - success_count
     total_steps = sum(r.get('step', 0) for r in exec_results if r.get('success'))
 
-    # 推送通知：自动运行时且在UTC 13-15点时段推送（对应北京 21-23点）
+    # 推送通知：自动运行时且在UTC 10-12点时段推送（对应北京 18-20点）
     if sckey and sckey.upper() != 'NO' and not is_manual_trigger():
         current_hour = get_utc_time().hour
-        if 13 <= current_hour <= 15:
+        if 10 <= current_hour <= 12:
             try:
                 push_notification(exec_results, sckey)
             except Exception as e:
