@@ -35,7 +35,7 @@ class Config:
     # 时间段步数配置（手动触发）
     MANUAL_STEP_RANGES = {
         'morning': (10000, 20000),  # 6-12点
-        'evening': (31000, 35000),  # 18-20点
+        'evening': (31000, 35000),  # 18-24点
         'night': (10000, 20000)  # 0-5点
     }
 
@@ -67,20 +67,19 @@ def get_bool_value_default(value: str, default: bool) -> bool:
     return value.upper() in ('TRUE', '1', 'YES', 'ON')
 
 
-def get_beijing_time() -> datetime:
-    """获取北京时间"""
-    target_timezone = pytz.timezone('Asia/Shanghai')
-    return datetime.now(target_timezone)
+def get_utc_time() -> datetime:
+    """获取UTC时间"""
+    return datetime.now(pytz.utc)
 
 
 def format_now() -> str:
-    """格式化当前时间"""
-    return get_beijing_time().strftime("%Y-%m-%d %H:%M:%S")
+    """格式化当前时间（UTC）"""
+    return get_utc_time().strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def get_timestamp() -> str:
     """获取时间戳（毫秒）"""
-    current_time = get_beijing_time()
+    current_time = get_utc_time()
     return "%.0f" % (current_time.timestamp() * 1000)
 
 
@@ -112,22 +111,25 @@ def is_manual_trigger() -> bool:
 
 def get_min_max_by_time(hour: int = None, minute: int = None) -> Tuple[int, int]:
     """
-    根据当前北京时间智能计算步数范围
-    统一使用时间段范围（手动/自动相同），晚上18-20点: 31000-35000
+    根据当前UTC时间智能计算步数范围
+    UTC时间对应关系：
+    - UTC 1:00 = 北京 9:00（上午时段）
+    - UTC 10:00 = 北京 18:00（晚上时段）
     """
     if hour is None:
-        hour = get_beijing_time().hour
+        hour = get_utc_time().hour
     if minute is None:
-        minute = get_beijing_time().minute
+        minute = get_utc_time().minute
 
-    # 统一逻辑：根据时间段选择（忽略手动/自动区别）
-    if 1 <= hour <= 5 or hour == 0:
-        return Config.MANUAL_STEP_RANGES['night']
-    elif 6 <= hour <= 12:
+    # 根据UTC时间段选择步数范围
+    if 0 <= hour <= 4:
+        # UTC 0-4点（北京 8-12点，早上时段）
         return Config.MANUAL_STEP_RANGES['morning']
-    elif 18 <= hour <= 20:
+    elif 10 <= hour <= 12:
+        # UTC 10-12点（北京 18-20点）
         return Config.MANUAL_STEP_RANGES['evening']
     else:
+        # UTC 其他时间（北京 其他时段）
         return Config.DEFAULT_MIN_STEP, Config.DEFAULT_MAX_STEP
 
 
@@ -683,10 +685,10 @@ def main():
     fail_count = total - success_count
     total_steps = sum(r.get('step', 0) for r in exec_results if r.get('success'))
 
-    # 推送通知：自动运行时且在晚上时段（18-23点）推送
+    # 推送通知：自动运行时且在UTC 13-15点时段推送（对应北京 21-23点）
     if sckey and sckey.upper() != 'NO' and not is_manual_trigger():
-        current_hour = get_beijing_time().hour
-        if 18 <= current_hour <= 23:
+        current_hour = get_utc_time().hour
+        if 13 <= current_hour <= 15:
             try:
                 push_notification(exec_results, sckey)
             except Exception as e:
