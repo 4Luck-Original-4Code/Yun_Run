@@ -34,8 +34,8 @@ class Config:
 
     # 时间段步数配置（手动触发）
     MANUAL_STEP_RANGES = {
-        'morning': (10000, 20000),  # 6-12点
-        'evening': (31000, 35000),  # 18-24点
+        'morning': (10000, 20000),  # 8-12点
+        'evening': (31000, 35000),  # 18-22点
     }
 
 
@@ -111,9 +111,9 @@ def is_manual_trigger() -> bool:
 def get_min_max_by_time(hour: int = None, minute: int = None) -> Tuple[int, int]:
     """
     根据当前UTC时间智能计算步数范围
-    UTC时间对应关系：
-    - UTC 1:00 = 北京 9:00（上午时段）
-    - UTC 10:00 = 北京 18:00（晚上时段）
+    UTC时间对应关系:
+    - UTC 1:00 = 北京 9:00(上午时段)
+    - UTC 11:00 = 北京 19:00(晚上时段)
     """
     if hour is None:
         hour = get_utc_time().hour
@@ -122,14 +122,14 @@ def get_min_max_by_time(hour: int = None, minute: int = None) -> Tuple[int, int]
 
     # 根据UTC时间段选择步数范围
     if 0 <= hour <= 4:
-        # UTC 0-4点（北京 8-12点，早上时段）
+        # UTC 0-4点(北京 8-12点,早上时段)
         return Config.MANUAL_STEP_RANGES['morning']
     elif 10 <= hour <= 14:
-        # UTC 10-14点（北京 18-22点）
+        # UTC 10-14点(北京 18-22点,晚上时段)
         return Config.MANUAL_STEP_RANGES['evening']
     else:
-        # UTC 其他时间（北京 其他时段）
-        return Config.DEFAULT_MIN_STEP, Config.DEFAULT_MAX_STEP
+        # 非目标时段,返回None表示不应执行
+        raise ValueError(f"当前UTC时间 {hour}:{minute} 不在运行时段内")
 
 
 def server_send(title: str, body: str, sckey: str = None):
