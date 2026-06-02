@@ -17,7 +17,7 @@ from typing import Optional, Tuple, Dict, List
 
 import requests
 from util.aes_help import encrypt_data, decrypt_data, get_aes_key
-import util.zepp_helper as zeppHelper
+import util.zepp_helper as zepphelper
 
 
 # ==================== 全局配置 ====================
@@ -285,7 +285,7 @@ class ZeppStepRunner:
             # 检查app_token是否有效
             if app_token:
                 try:
-                    ok, msg = zeppHelper.check_app_token(app_token)
+                    ok, msg = zepphelper.check_app_token(app_token)
                     if ok:
                         self.log_str += "[成功] 使用缓存的app_token\n"
                         return app_token
@@ -300,7 +300,7 @@ class ZeppStepRunner:
 
             # 尝试用login_token刷新app_token
             try:
-                app_token, msg = zeppHelper.grant_app_token(login_token)
+                app_token, msg = zepphelper.grant_app_token(login_token)
                 if app_token:
                     user_token_info["app_token"] = app_token
                     user_token_info["app_token_time"] = get_timestamp()
@@ -314,7 +314,7 @@ class ZeppStepRunner:
 
             # 尝试用access_token刷新login_token
             try:
-                login_token, app_token, user_id, msg = zeppHelper.grant_login_tokens(access_token, self.device_id,
+                login_token, app_token, user_id, msg = zepphelper.grant_login_tokens(access_token, self.device_id,
                                                                                      self.is_phone)
                 if login_token:
                     user_token_info["login_token"] = login_token
@@ -333,7 +333,7 @@ class ZeppStepRunner:
 
         # 重新登录获取access_token
         try:
-            access_token, msg = zeppHelper.login_access_token(self.user, self._password)
+            access_token, msg = zepphelper.login_access_token(self.user, self._password)
             if not access_token:
                 self.log_str += f"[失败] 获取access_token失败: {msg}\n"
                 self.error = f"登录失败: {msg}"
@@ -348,7 +348,7 @@ class ZeppStepRunner:
 
         # 使用access_token获取login_token等
         try:
-            login_token, app_token, user_id, msg = zeppHelper.grant_login_tokens(access_token, self.device_id,
+            login_token, app_token, user_id, msg = zepphelper.grant_login_tokens(access_token, self.device_id,
                                                                                  self.is_phone)
             if not login_token:
                 self.log_str += f"[失败] 获取login_token失败: {msg}\n"
@@ -395,7 +395,7 @@ class ZeppStepRunner:
 
         # 直接进行完整登录流程
         try:
-            access_token, msg = zeppHelper.login_access_token(self.user, self._password)
+            access_token, msg = zepphelper.login_access_token(self.user, self._password)
             if not access_token:
                 self.log_str += f"[失败] 获取access_token失败: {msg}\n"
                 return None
@@ -406,7 +406,7 @@ class ZeppStepRunner:
 
         # 使用access_token获取login_token等
         try:
-            login_token, app_token, user_id, msg = zeppHelper.grant_login_tokens(access_token, self.device_id,
+            login_token, app_token, user_id, msg = zepphelper.grant_login_tokens(access_token, self.device_id,
                                                                                  self.is_phone)
             if not login_token:
                 self.log_str += f"[失败] 获取login_token失败: {msg}\n"
@@ -481,7 +481,7 @@ class ZeppStepRunner:
             for attempt in range(Config.MAX_RETRY):
                 try:
                     # 发送步数更新请求
-                    ok, msg = zeppHelper.update_step(app_token, self.user_id, step, self.fake_ip_addr)
+                    ok, msg = zepphelper.update_step(app_token, self.user_id, step, self.fake_ip_addr)
                     if ok:
                         update_success = True
                         update_msg = msg
@@ -490,7 +490,7 @@ class ZeppStepRunner:
                     self.log_str += f"[失败] 第{attempt + 1}次尝试: {msg}\n"
 
                     # 智能判断：如果是Token失效/未授权，尝试重新走一次完整登录
-                    # 判断条件根据 zeppHelper 实际返回的 msg 关键字进行调整
+                    # 判断条件根据 zepphelper 实际返回的 msg 关键字进行调整
                     if msg and any(k in msg.lower() for k in ['token', 'auth', '未授权', '登录', '失效']):
                         self.log_str += f"[警告] 提交时发现Token可能失效，尝试重新获取密钥...\n"
                         app_token = self._full_login_process(retry_count=attempt + 1)
