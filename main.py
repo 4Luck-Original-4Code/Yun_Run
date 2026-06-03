@@ -625,14 +625,7 @@ def main():
         print("[错误] 缺少必需的环境变量: ZEPP_USER 或 ZEPP_PWD", flush=True)
         sys.exit(1)
 
-    user_list = [u.strip() for u in users.split('#') if u.strip()]
-    passwd_list = [p.strip() for p in passwords.split('#') if p.strip()]
-
-    if len(user_list) != len(passwd_list):
-        print(f"[错误] 账号数量({len(user_list)})与密码数量({len(passwd_list)})不匹配", flush=True)
-        sys.exit(1)
-
-    print(f"[成功] 配置验证通过（{len(user_list)} 个账号）\n", flush=True)
+    print(f"[成功] 配置验证通过\n", flush=True)
 
     user_tokens = {}
     aes_key = get_aes_key()
