@@ -1,19 +1,18 @@
-import json
 import re
 import time
 import traceback
-import urllib
+import urllib.parse
 import uuid
 from datetime import datetime
+from typing import Tuple, Optional
 from util.constants import DATA_JSON
 import pytz
 import requests
 
 from util.aes_help import encrypt_data, HM_AES_KEY, HM_AES_IV
 
-#feat: 通过AES加密保存账号token，避免经常登录导致429. 需要配置secret：AES_KEY
-#通过账号密码获取access_token和refresh_token 但是refresh_token不知道怎么使用
-def login_access_token(user, password) -> (str | None, str | None):
+
+def login_access_token(user, password) -> Tuple[Optional[str], Optional[str]]:
     """登录获取access_token(加密方式)"""
     headers = {
         "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -24,7 +23,7 @@ def login_access_token(user, password) -> (str | None, str | None):
         "x-hm-ekv": "1",
         "hm-privacy-ceip": "false"
     }
-    
+
     login_data = {
         'emailOrPhone': user,
         'password': password,
@@ -34,45 +33,45 @@ def login_access_token(user, password) -> (str | None, str | None):
         'token': 'access',
         'redirect_uri': 'https://s3-us-west-2.amazonaws.com/hm-registration/successsignin.html',
     }
-    
-    
+
     query = urllib.parse.urlencode(login_data)
     plaintext = query.encode('utf-8')
-    
+
     try:
-        cipher_data = encrypt_data(plaintext, HM_AES_KEY, HM_AES_IV)
+        cipher_data = encrypt_data(plaintext, HM_AES_KEY.encode('utf-8') if isinstance(HM_AES_KEY, str) else HM_AES_KEY, 
+                                   HM_AES_IV.encode('utf-8') if isinstance(HM_AES_IV, str) else HM_AES_IV)
     except Exception as e:
         error_msg = f"加密失败: {str(e)}"
         print(f"[错误] {error_msg}")
         return None, error_msg
-    
+
     url1 = 'https://api-user.zepp.com/v2/registrations/tokens'
-    
+
     try:
-        r1 = requests.post(url1, data=cipher_data, headers=headers, 
-                          allow_redirects=False, timeout=10)
-        
+        r1 = requests.post(url1, data=cipher_data, headers=headers,
+                           allow_redirects=False, timeout=10)
+
         if r1.status_code != 303:
             return None, f"登录异常，status: {r1.status_code}"
-            
+
         location = r1.headers.get("Location", "")
-        
+
         code = get_access_token(location)
         if code is None:
             error_code = get_error_code(location)
             return None, f"获取accessToken失败: {error_code}"
-            
+
         print(f"[成功] access_token长度: {len(code)}")
         return code, None
-        
+
     except Exception as e:
         error_msg = f"请求异常: {str(e)}"
         print(f"[异常] {error_msg}")
         return None, error_msg
 
 
-# 获取登录code
 def get_access_token(location):
+    """从location URL中提取access token"""
     code_pattern = re.compile("(?<=access=).*?(?=&)")
     result = code_pattern.findall(location)
     if result is None or len(result) == 0:
@@ -81,6 +80,7 @@ def get_access_token(location):
 
 
 def get_error_code(location):
+    """从location URL中提取错误码"""
     code_pattern = re.compile("(?<=error=).*?(?=&)")
     result = code_pattern.findall(location)
     if result is None or len(result) == 0:
@@ -88,26 +88,25 @@ def get_error_code(location):
     return result[0]
 
 
-# 获取北京时间
 def get_beijing_time():
+    """获取北京时间"""
     target_timezone = pytz.timezone('Asia/Shanghai')
-    # 获取当前时间
     return datetime.now().astimezone(target_timezone)
 
 
-# 格式化时间
 def format_now():
+    """格式化当前时间（北京时间）"""
     return get_beijing_time().strftime("%Y-%m-%d %H:%M:%S")
 
 
-# 获取时间戳
 def get_time():
+    """获取时间戳（毫秒）"""
     current_time = get_beijing_time()
     return "%.0f" % (current_time.timestamp() * 1000)
 
 
-# 获取login_token，app_token，userid
-def grant_login_tokens(access_token, device_id, is_phone=False) -> (str | None, str | None, str | None, str | None):
+def grant_login_tokens(access_token, device_id, is_phone=False) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """获取login_token，app_token，userid"""
     url = "https://account.huami.com/v2/client/login"
     headers = {
         "app_name": "com.xiaomi.hm.health",
@@ -160,15 +159,14 @@ def grant_login_tokens(access_token, device_id, is_phone=False) -> (str | None, 
     return _login_token, _app_token, _userid, None
 
 
-# 获取app_token 用于提交数据变更
-def grant_app_token(login_token: str) -> (str | None, str | None):
+def grant_app_token(login_token: str) -> Tuple[Optional[str], Optional[str]]:
+    """获取app_token，用于提交数据变更"""
     url = f"https://account-cn.huami.com/v1/client/app_tokens?app_name=com.xiaomi.hm.health&dn=api-user.huami.com%2Capi-mifit.huami.com%2Capp-analytics.huami.com&login_token={login_token}"
     headers = {'User-Agent': 'MiFit/5.3.0 (iPhone; iOS 14.7.1; Scale/3.00)'}
-    resp = requests.get(url, headers=headers)
+    resp = requests.get(url, headers=headers, timeout=10)
     if resp.status_code != 200:
         return None, "请求异常：%d" % resp.status_code
     resp = resp.json()
-
 
     result = resp.get("result")
     if result != "ok":
@@ -178,13 +176,18 @@ def grant_app_token(login_token: str) -> (str | None, str | None):
     return app_token, None
 
 
-# 获取用户信息 主要用于检查app_token是否有效
-def check_app_token(app_token) -> (bool, str | None):
+def check_app_token(app_token, userid="1188760659") -> Tuple[bool, Optional[str]]:
+    """
+    检查app_token是否有效
+    :param app_token: 应用token
+    :param userid: 用户ID（默认值用于快速验证）
+    :return: (是否有效, 错误信息)
+    """
     url = "https://api-mifit-cn3.zepp.com/huami.health.getUserInfo.json"
 
     params = {
         "r": "00b7912b-790a-4552-81b1-3742f9dd1e76",
-        "userid": "1188760659",
+        "userid": userid,
         "appid": "428135909242707968",
         "channel": "Normal",
         "country": "CN",
@@ -213,7 +216,7 @@ def check_app_token(app_token) -> (bool, str | None):
         "lang": "zh_CN",
         "clientid": "428135909242707968"
     }
-    response = requests.get(url, params=params, headers=headers)
+    response = requests.get(url, params=params, headers=headers, timeout=10)
     if response.status_code != 200:
         return False, "请求异常：%d" % response.status_code
     response = response.json()
@@ -224,7 +227,7 @@ def check_app_token(app_token) -> (bool, str | None):
         return False, message
 
 
-def renew_login_token(login_token) -> (str | None, str | None):
+def renew_login_token(login_token) -> Tuple[Optional[str], Optional[str]]:
     url = "https://account-cn3.zepp.com/v1/client/renew_login_token"
     params = {
         "os_version": "v0.8.1",
@@ -282,17 +285,17 @@ def update_step(app_token, userid, step, ip):
     try:
         response = requests.post(url, data=data, headers=head, timeout=30)  # 使用 Config.REQUEST_TIMEOUT，如果有
         # print(f"[响应] 状态码: {response.status_code}")
-    
+
         if response.status_code != 200:
             return False, f"请求修改步数异常：{response.status_code}"
-    
+
         response_json = response.json()
         message = response_json.get("message", "未知错误")
         if message == "success":
             return True, message
         else:
             return False, message
-    
+
     except requests.exceptions.Timeout:
         return False, "请求超时"
     except requests.exceptions.RequestException as e:
