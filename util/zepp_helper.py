@@ -270,8 +270,17 @@ def update_step(app_token, userid, step, ip):
 
     find_date = re.compile(r".*?date%22%3A%22(.*?)%22%2C%22data.*?")
     find_step = re.compile(r".*?ttl%5C%22%3A(.*?)%2C%5C%22dis.*?")
-    data_json = re.sub(find_date.findall(data_json)[0], today, str(data_json))
-    data_json = re.sub(find_step.findall(data_json)[0], str(step), str(data_json))
+    
+    date_matches = find_date.findall(data_json)
+    if not date_matches:
+        return False, "DATA_JSON格式异常：无法匹配日期占位符"
+    
+    step_matches = find_step.findall(data_json)
+    if not step_matches:
+        return False, "DATA_JSON格式异常：无法匹配步数占位符"
+    
+    data_json = re.sub(date_matches[0], today, str(data_json))
+    data_json = re.sub(step_matches[0], str(step), str(data_json))
 
     url = f'https://api-mifit-cn.huami.com/v1/data/band_data.json?&t={t}&r={str(uuid.uuid4())}'
     head = {
