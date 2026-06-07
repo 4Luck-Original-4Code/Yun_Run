@@ -311,21 +311,7 @@ class ZeppStepRunner:
             else:
                 self.log_str += "[警告] 缓存中不存在 app_token\n"
 
-            self.log_str += f"[警告] app_token已失效，尝试刷新...\n"
-
-            # 先尝试续期 login_token 自身，延长有效期
-            if login_token:
-                try:
-                    new_login_token, renew_msg = zepphelper.renew_login_token(login_token)
-                    if new_login_token:
-                        user_token_info["login_token"] = new_login_token
-                        user_token_info["login_token_time"] = get_timestamp()
-                        login_token = new_login_token
-                        self.log_str += "[成功] login_token续期成功\n"
-                    else:
-                        self.log_str += f"[详细] login_token续期失败: {renew_msg}\n"
-                except Exception as e:
-                    self.log_str += f"[警告] login_token续期异常: {str(e)}\n"
+            self.log_str += f"[警告] app_token已失效，尝试用login_token刷新...\n"
 
             try:
                 app_token, msg = zepphelper.grant_app_token(login_token)
