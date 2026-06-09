@@ -1,5 +1,6 @@
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
+import base64
 import os
 
 # 华米传输加密使用的密钥 固定iv
@@ -7,18 +8,15 @@ import os
 HM_AES_KEY = b'xeNtBVqzDc6tuNTh'  # 16 bytes
 HM_AES_IV = b'MAAAYAAAAAAAAABg'  # 16 bytes
 
-# 本地存储默认密钥（可自定义）
-DEFAULT_AES_KEY = b'xeNtBVqzDc6tuNTh'  # 16 bytes，请修改为你的密钥
-
 AES_BLOCK_SIZE = AES.block_size  # 16
 
 
 def get_aes_key():
-    """获取AES密钥：优先使用环境变量，否则使用默认密钥"""
+    """获取AES密钥：从环境变量获取"""
     aes_key = os.environ.get('AES_KEY')
     if aes_key and len(aes_key) == 16:
         return aes_key.encode('utf-8')
-    return DEFAULT_AES_KEY
+    raise ValueError("AES_KEY environment variable not set or invalid")
 
 
 def _pkcs7_pad(data: bytes) -> bytes:
@@ -128,3 +126,29 @@ def encrypt_huami_data(plain: bytes) -> bytes:
 def decrypt_huami_data(data: bytes) -> bytes:
     """使用华米固定密钥和IV解密数据"""
     return decrypt_data(data, HM_AES_KEY, HM_AES_IV)
+
+
+def bytes_to_base64(data: bytes) -> str:
+    """
+    将字节数据转换为Base64编码字符串
+    
+    Args:
+        data: 需要编码的字节数据
+        
+    Returns:
+        Base64编码的字符串
+    """
+    return base64.b64encode(data).decode('utf-8')
+
+
+def base64_to_bytes(data: str) -> bytes:
+    """
+    将Base64编码字符串转换为字节数据
+    
+    Args:
+        data: Base64编码的字符串
+        
+    Returns:
+        解码后的字节数据
+    """
+    return base64.b64decode(data.encode('utf-8'))
