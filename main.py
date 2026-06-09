@@ -595,7 +595,6 @@ def main():
     min_step, max_step = get_min_max_by_time()
     print(f"[信息] 步数范围: {min_step} ~ {max_step}", flush=True)
     
-    # 显示推送配置状态
     push_channels = []
     if sckey and sckey != 'NO':
         push_channels.append("Server酱")
@@ -603,10 +602,7 @@ def main():
         push_channels.append("PushPlus")
     if push_wechat_webhook_key and push_wechat_webhook_key != 'NO':
         push_channels.append("企业微信")
-    
-    push_status = ', '.join(push_channels) if push_channels else '未启用'
-    print(f"[信息] 推送通知: {push_status}\n", flush=True)
-    
+
     # 创建推送配置对象（用于登录失败通知和最终结果推送）
     push_config = None
     if push_channels:
@@ -640,11 +636,10 @@ def main():
     success_count = sum(1 for r in exec_results if r.get('success'))
     fail_count = total - success_count
     total_steps = sum(r.get('step', 0) for r in exec_results if r.get('success'))
-    
+
     summary = f"\n执行账号总数{total}，成功：{success_count}，失败：{fail_count}"
     if total_steps > 0:
         summary += f"，总步数：{total_steps}"
-    print(summary, flush=True)
 
     # 推送通知（使用统一的推送模块）
     if not is_manual_trigger() and push_channels and push_config:
