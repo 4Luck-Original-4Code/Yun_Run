@@ -18,6 +18,7 @@ from typing import Optional, Tuple, Dict, List
 import requests
 from util.aes_help import encrypt_data, decrypt_data, get_aes_key
 import util.zepp_helper as zepphelper
+import util.push_util as push_util
 
 
 # ==================== 全局配置 ====================
@@ -68,19 +69,20 @@ def get_bool_value_default(value: str, default: bool) -> bool:
     return value.upper() in ('TRUE', '1', 'YES', 'ON')
 
 
-def get_utc_time() -> datetime:
-    """获取UTC时间"""
-    return datetime.now(pytz.utc)
+def get_beijing_time() -> datetime:
+    """获取北京时间"""
+    target_timezone = pytz.timezone('Asia/Shanghai')
+    return datetime.now().astimezone(target_timezone)
 
 
 def format_now() -> str:
-    """格式化当前时间（UTC）"""
-    return get_utc_time().strftime("%Y-%m-%d %H:%M:%S UTC")
+    """格式化当前时间（北京时间）"""
+    return get_beijing_time().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def get_timestamp() -> str:
     """获取时间戳（毫秒）"""
-    current_time = get_utc_time()
+    current_time = get_beijing_time()
     return "%.0f" % (current_time.timestamp() * 1000)
 
 
@@ -112,71 +114,34 @@ def is_manual_trigger() -> bool:
 
 def get_min_max_by_time(hour: int = None, minute: int = None) -> Tuple[int, int]:
     """
-    根据当前UTC时间智能计算步数范围
-    UTC时间对应关系（北京时间 = UTC + 8）:
-    - UTC 17-21点  → 北京 次日1-5点   (night时段: 10000-20000)
-    - UTC 22-23点/0-4点  → 北京 6-12点  (morning时段: 10000-20000，跨天)
-    - UTC 5-10点  → 北京 13-18点  (afternoon时段: 21000-30000)
-    - UTC 11-16点 → 北京 19-24点  (evening时段: 31000-35000)
+    根据当前北京时间智能计算步数范围
+    时段划分（北京时间）:
+    - 01:00-05:00 (night时段): 10000-20000
+    - 06:00-12:00 (morning时段): 10000-20000
+    - 13:00-18:00 (afternoon时段): 21000-30000
+    - 19:00-24:00 (evening时段): 31000-35000
     """
     if hour is None:
-        hour = get_utc_time().hour
+        hour = get_beijing_time().hour
     if minute is None:
-        minute = get_utc_time().minute
+        minute = get_beijing_time().minute
 
-    # 根据UTC时间段选择步数范围
-    if 17 <= hour <= 21:
-        # UTC 17-21 → 北京 1-5点 (night)
+    # 根据北京时间段选择步数范围
+    if 1 <= hour <= 5:
+        # 北京 1-5点 (night)
         return Config.MANUAL_STEP_RANGES['night']
-    elif (22 <= hour <= 23) or (0 <= hour <= 4):
-        # UTC 22-23,0-4 = 北京 6-12点 (morning，跨天)
+    elif 6 <= hour <= 12:
+        # 北京 6-12点 (morning)
         return Config.MANUAL_STEP_RANGES['morning']
-    elif 5 <= hour <= 10:
-        # UTC 5-10 → 北京 13-18点 (afternoon)
+    elif 13 <= hour <= 18:
+        # 北京 13-18点 (afternoon)
         return Config.MANUAL_STEP_RANGES['afternoon']
-    elif 11 <= hour <= 16:
-        # UTC 11-16 → 北京 19-24点 (evening)
+    elif 19 <= hour <= 24 or hour == 0:
+        # 北京 19-24点 (evening)
         return Config.MANUAL_STEP_RANGES['evening']
     else:
         # 默认范围
         return Config.DEFAULT_MIN_STEP, Config.DEFAULT_MAX_STEP
-
-
-def server_send(title: str, body: str, sckey: str = None):
-    """
-    Server酱推送（支持Server酱Turbo）
-    :param title: 推送标题
-    :param body: 推送正文
-    :param sckey: Server酱密钥
-    """
-    if not sckey or sckey.upper() == 'NO':
-        return
-
-    server_url = f"https://sctapi.ftqq.com/{sckey}.send"
-
-    data = {
-        'text': title,
-        'desp': body
-    }
-
-    try:
-        response = requests.post(server_url, data=data, timeout=Config.REQUEST_TIMEOUT)
-        if response.status_code == 200:
-            try:
-                result = response.json()
-            except ValueError:
-                print(f"[失败] Server酱返回非JSON: {response.text[:200]}")
-                return
-            if result.get('code') == 0:
-                print(f"[成功] Server酱推送成功")
-            else:
-                print(f"[失败] Server酱推送失败: {result.get('message', '未知错误')}")
-        else:
-            print(f"[失败] Server酱推送失败: HTTP {response.status_code}")
-    except requests.exceptions.Timeout:
-        print(f"[超时] Server酱推送超时")
-    except Exception as e:
-        print(f"[异常] Server酱推送异常: {str(e)}")
 
 
 # ==================== Token管理 ====================
@@ -203,7 +168,7 @@ def prepare_user_tokens(aes_key: bytes = None) -> Dict:
         decrypted_data = decrypt_data(encrypted_data, aes_key, None)
         tokens = json.loads(decrypted_data.decode('utf-8', errors='strict'))
 
-        print(f"[成功] 已加载 {len(tokens)} 个账号的Token缓存")
+        print(f"[成功] 已加载Token缓存")
         return tokens
     except json.JSONDecodeError as e:
         print(f"[错误] Token文件JSON解析失败: {str(e)}")
@@ -231,7 +196,7 @@ def persist_user_tokens(user_tokens: Dict) -> bool:
         with open(Config.TOKEN_FILE, 'wb') as f:
             f.write(encrypted_data)
 
-        print(f"[成功] Token已加密保存（{len(user_tokens)} 个账号）")
+        print(f"[成功] Token已加密保存")
         return True
     except Exception as e:
         print(f"[失败] Token保存失败: {str(e)}")
@@ -443,9 +408,10 @@ class ZeppStepRunner:
             except AttributeError:
                 pass
 
-    def execute(self, min_step: int, max_step: int, sckey: str = None) -> Tuple[str, bool]:
+    def execute(self, min_step: int, max_step: int, push_config=None) -> Tuple[str, bool]:
         """
         执行刷步数主逻辑
+        :param push_config: 推送配置对象（PushConfig）
         :return: (消息, 是否成功)
         """
         if self.invalid:
@@ -466,16 +432,16 @@ class ZeppStepRunner:
                         self.log_str += f"[重试] {Config.RETRY_DELAY}秒后进行第{attempt + 1}次登录重试...\n"
                         time.sleep(Config.RETRY_DELAY)
                     else:
-                        if sckey and sckey.upper() != 'NO':
-                            self._send_login_failure_notification(sckey)
+                        if push_config:
+                            self._send_login_failure_notification(push_config)
                         return f"[失败] 连续{Config.MAX_RETRY}次登录尝试均失败", False
                 else:
                     self.login_failure_count = 0
                     break
 
             if not app_token:
-                if sckey and sckey.upper() != 'NO':
-                    self._send_login_failure_notification(sckey)
+                if push_config:
+                    self._send_login_failure_notification(push_config)
                 return self.error or "[失败] 登录失败", False
 
             step = random.randint(min_step, max_step)
@@ -517,20 +483,26 @@ class ZeppStepRunner:
         finally:
             self._clean_password()
 
-    def _send_login_failure_notification(self, sckey: str):
-        """发送登录失败通知"""
+    def _send_login_failure_notification(self, push_config):
+        """发送登录失败通知（支持所有推送渠道）"""
         current_time = format_now()
-        title = "刷步失败通知"
-        body = f"{current_time}\n\n登录失败 | 账号: {desensitize_user_name(self.user)}\n原因: 连续3次登录尝试均失败"
-
+        
+        # 构建执行结果格式，复用推送逻辑
+        exec_result = {
+            "user": desensitize_user_name(self.user),
+            "success": False,
+            "msg": f"连续{Config.MAX_RETRY}次登录尝试均失败"
+        }
+        summary = f"{current_time}\n\n登录失败 | 账号: {desensitize_user_name(self.user)}\n原因: 连续{Config.MAX_RETRY}次登录尝试均失败"
+        
         print(f"[信息] 推送登录失败通知...", flush=True)
-        server_send(title, body, sckey)
+        push_util.push_results([exec_result], summary, push_config)
 
 
 # ==================== 主执行函数 ====================
 
 def run_single_account(user: str, password: str,
-                       min_step: int, max_step: int, user_tokens: Dict, sckey: str = None) -> Dict:
+                       min_step: int, max_step: int, user_tokens: Dict, push_config=None) -> Dict:
     """执行单个账号的刷步数任务"""
     log_str = f"\n{'=' * 60}\n"
     log_str += f"[时间] {format_now()}\n"
@@ -539,7 +511,7 @@ def run_single_account(user: str, password: str,
 
     try:
         runner = ZeppStepRunner(user, password, user_tokens)
-        exec_msg, success = runner.execute(min_step, max_step, sckey)
+        exec_msg, success = runner.execute(min_step, max_step, push_config)
 
         log_str += runner.log_str
         log_str += f"{exec_msg}\n"
@@ -566,39 +538,10 @@ def run_single_account(user: str, password: str,
 
 
 def execute_single_account(user: str, password: str, min_step: int, max_step: int,
-                           user_tokens: Dict, sckey: str = None) -> List[Dict]:
+                           user_tokens: Dict, push_config=None) -> List[Dict]:
     """执行单个账号的刷步数任务"""
-    result = run_single_account(user, password, min_step, max_step, user_tokens, sckey)
+    result = run_single_account(user, password, min_step, max_step, user_tokens, push_config)
     return [result]
-
-
-def push_notification(exec_results: List[Dict], sckey: str = None):
-    """推送执行结果通知"""
-    if not sckey or sckey.upper() == 'NO':
-        print("[信息] 未配置推送或已禁用推送", flush=True)
-        return
-
-    if not exec_results:
-        return
-
-    result = exec_results[0]
-    user = result.get('user', '未知')
-    success = result.get('success', False)
-    res_msg = result.get('msg', '无信息')
-    step = result.get('step', 0) if success else None
-
-    status = "成功 success" if success else "失败 failure"
-    current_time = format_now()
-
-    title = "刷步通知"
-    body = f"{current_time}\n\n"
-    if step:
-        body += f"{status} | 步数: {step}\n"
-    else:
-        body += f"{status} | {res_msg}\n"
-
-    print(f"[信息] 正在推送通知...", flush=True)
-    server_send(title, body, sckey)
 
 
 # ==================== 主入口 ====================
@@ -607,18 +550,26 @@ def main():
     """主函数 - 直接读取环境变量"""
     print(f"\n{'=' * 60}", flush=True)
     print(f"Zepp自动刷步数程序", flush=True)
-    print(f"执行时间: {format_now()}", flush=True)
+    print(f"执行时间: {format_now()} (北京时间)", flush=True)
     print(f"触发方式: {'手动触发' if is_manual_trigger() else '自动触发'}", flush=True)
     print(f"{'=' * 60}\n", flush=True)
 
+    # 读取环境变量
     users = os.environ.get('ZEPP_USER', '').strip()
     passwords = os.environ.get('ZEPP_PWD', '').strip()
     sckey = os.environ.get('SCKEY', '').strip()
+    
+    # 读取其他推送配置
+    push_plus_token = os.environ.get('PUSH_PLUS_TOKEN', '').strip()
+    push_plus_hour = os.environ.get('PUSH_PLUS_HOUR', '').strip()
+    push_wechat_webhook_key = os.environ.get('PUSH_WECHAT_WEBHOOK_KEY', '').strip()
 
     print("[检查] 环境变量配置...", flush=True)
     print(f"  - USER存在: {bool(users)}", flush=True)
     print(f"  - PWD存在: {bool(passwords)}", flush=True)
     print(f"  - SCKEY存在: {bool(sckey)}", flush=True)
+    print(f"  - PUSH_PLUS_TOKEN存在: {bool(push_plus_token)}", flush=True)
+    print(f"  - WECHAT_WEBHOOK_KEY存在: {bool(push_wechat_webhook_key)}", flush=True)
     print(f"  - AES_KEY存在: {bool(os.environ.get('AES_KEY'))}\n", flush=True)
 
     if not users or not passwords:
@@ -627,6 +578,7 @@ def main():
 
     print(f"[成功] 配置验证通过\n", flush=True)
 
+    # 初始化 Token 缓存
     user_tokens = {}
     aes_key = get_aes_key()
 
@@ -642,18 +594,41 @@ def main():
     # 计算步数范围
     min_step, max_step = get_min_max_by_time()
     print(f"[信息] 步数范围: {min_step} ~ {max_step}", flush=True)
-    print(f"[信息] 推送通知: {'已启用' if sckey and sckey != 'NO' else '未启用'}\n", flush=True)
+    
+    # 显示推送配置状态
+    push_channels = []
+    if sckey and sckey != 'NO':
+        push_channels.append("Server酱")
+    if push_plus_token and push_plus_token != 'NO':
+        push_channels.append("PushPlus")
+    if push_wechat_webhook_key and push_wechat_webhook_key != 'NO':
+        push_channels.append("企业微信")
+    
+    push_status = ', '.join(push_channels) if push_channels else '未启用'
+    print(f"[信息] 推送通知: {push_status}\n", flush=True)
+    
+    # 创建推送配置对象（用于登录失败通知和最终结果推送）
+    push_config = None
+    if push_channels:
+        push_config = push_util.PushConfig(
+            sckey=sckey if sckey and sckey != 'NO' else None,
+            push_plus_token=push_plus_token if push_plus_token and push_plus_token != 'NO' else None,
+            push_plus_hour=push_plus_hour if push_plus_hour else None,
+            push_wechat_webhook_key=push_wechat_webhook_key if push_wechat_webhook_key and push_wechat_webhook_key != 'NO' else None
+        )
 
+    # 执行刷步任务
     try:
         exec_results = execute_single_account(
             users, passwords, min_step, max_step,
-            user_tokens, sckey
+            user_tokens, push_config
         )
     except Exception as e:
         print(f"\n[错误] 执行过程中发生异常: {str(e)}", flush=True)
         traceback.print_exc()
         sys.exit(1)
 
+    # 保存 Token 缓存（模仿 mimotion-master 的持久化逻辑）
     if aes_key and user_tokens:
         try:
             persist_user_tokens(user_tokens)
@@ -665,14 +640,19 @@ def main():
     success_count = sum(1 for r in exec_results if r.get('success'))
     fail_count = total - success_count
     total_steps = sum(r.get('step', 0) for r in exec_results if r.get('success'))
+    
+    summary = f"\n执行账号总数{total}，成功：{success_count}，失败：{fail_count}"
+    if total_steps > 0:
+        summary += f"，总步数：{total_steps}"
+    print(summary, flush=True)
 
-    if sckey and sckey.upper() != 'NO' and not is_manual_trigger():
-        current_hour = get_utc_time().hour
-        if 11 <= current_hour <= 16:
-            try:
-                push_notification(exec_results, sckey)
-            except Exception as e:
-                print(f"[警告] 推送通知失败: {str(e)}", flush=True)
+    # 推送通知（使用统一的推送模块）
+    if not is_manual_trigger() and push_channels and push_config:
+        try:
+            print(f"\n[信息] 开始推送通知到 {len(push_channels)} 个渠道...", flush=True)
+            push_util.push_results(exec_results, summary, push_config)
+        except Exception as e:
+            print(f"[警告] 推送通知失败: {str(e)}", flush=True)
 
     sys.exit(0 if fail_count == 0 else 1)
 
