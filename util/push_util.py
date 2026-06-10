@@ -143,8 +143,13 @@ def build_wechat_content(title, content) -> str:
 def push_results(exec_results, summary, config: PushConfig):
     """统一推送入口：逐个推送到所有已配置的渠道"""
     if not_in_push_time_range(config):
-        print("[推送] 不在推送时间段，跳过")
         return
+
+    # 统计已配置的推送渠道数
+    active_channels = sum(1 for key in [config.sckey, config.push_plus_token, config.push_wechat_webhook_key]
+                         if key and key.upper() != 'NO')
+    if active_channels > 0:
+        print(f"\n[信息] 开始推送通知到 {active_channels} 个渠道...", flush=True)
 
     push_to_server_chan(exec_results, summary, config)
     push_to_push_plus(exec_results, summary, config)
@@ -194,7 +199,6 @@ def not_in_push_time_range(config: PushConfig) -> bool:
     except Exception as e:
         print(f"[警告] 读取cron_change_time失败: {e}")
 
-    print(f"[推送时间] 当前{time_bj.hour}:xx ≠ {config.push_plus_hour}:00，跳过")
     return True
 
 
