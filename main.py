@@ -644,7 +644,6 @@ def main():
     # 推送通知（使用统一的推送模块）
     if not is_manual_trigger() and push_channels and push_config:
         try:
-            print(f"\n[信息] 开始推送通知到 {len(push_channels)} 个渠道...", flush=True)
             push_util.push_results(exec_results, summary, push_config)
         except Exception as e:
             print(f"[警告] 推送通知失败: {str(e)}", flush=True)
