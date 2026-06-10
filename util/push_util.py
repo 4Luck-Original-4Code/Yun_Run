@@ -160,46 +160,34 @@ def not_in_push_time_range(config: PushConfig) -> bool:
     """
     检查当前是否在推送时间段内
 
-    优先级：
-    1. 未配置推送时间 → 始终允许
-    2. 当前北京时间整点匹配 → 允许
-    3. cron_change_time计划时间匹配 → 允许（延迟补偿）
+    推送规则：
+    1. 当前北京时间在晚上时段（19:00-24:00）→ 允许推送
+    2. 其他时段 → 跳过推送
+    3. 若额外配置了 PUSH_PLUS_HOUR，则仅在晚上该整点推送
 
     :return: True=跳过, False=推送
     """
-    if not config.push_plus_hour:
-        return False
-
     time_bj = get_beijing_time()
+    current_hour = time_bj.hour
 
-    # 策略1：当前时间匹配
-    if config.push_plus_hour.isdigit():
-        current_hour = time_bj.hour
+    # 判断是否在晚上推送时段（北京时间 19-24点）
+    is_evening = (19 <= current_hour <= 23) or (current_hour == 0)
+
+    if not is_evening:
+        print(f"[推送时间] 当前{current_hour}:xx，非晚上时段，跳过推送")
+        return True
+
+    # 如果配置了 PUSH_PLUS_HOUR，进一步限制只在该整点推送
+    if config.push_plus_hour and config.push_plus_hour.isdigit():
         target_hour = int(config.push_plus_hour)
-        if current_hour == target_hour:
-            print(f"[推送时间] 当前{current_hour}:xx，匹配推送时间")
-            return False
+        if current_hour != target_hour:
+            print(f"[推送时间] 当前{current_hour}:xx，目标{target_hour}:xx，时间不匹配，跳过推送")
+            return True
+        print(f"[推送时间] 当前{current_hour}:xx，晚上时段，匹配推送时间")
+    else:
+        print(f"[推送时间] 当前{current_hour}:xx，晚上时段，允许推送")
 
-    # 策略2：cron_change_time计划时间匹配（延迟补偿）
-    try:
-        with open('cron_change_time', 'r') as f:
-            lines = f.readlines()
-            if lines:
-                first_line = lines[0].strip()
-                match = re.search(r'北京时间\((\d+):(\d+)\)', first_line)
-                if match:
-                    planned_hour = int(match.group(1))
-                    planned_minute = match.group(2)
-                    target_hour = int(config.push_plus_hour)
-                    if target_hour == planned_hour:
-                        print(f"[推送时间] 计划{planned_hour}:{planned_minute}，匹配推送，延迟补偿")
-                        return False
-    except FileNotFoundError:
-        pass  # 首次运行或文件不存在
-    except Exception as e:
-        print(f"[警告] 读取cron_change_time失败: {e}")
-
-    return True
+    return False
 
 
 def push_to_server_chan(exec_results, summary, config: PushConfig):
