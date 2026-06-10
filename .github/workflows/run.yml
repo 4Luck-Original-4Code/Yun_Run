@@ -11,8 +11,8 @@ on:
   
   # 每天自动运行2次（UTC时间）
   schedule:
-    # UTC 1:00（北京 10:00）- 不推送通知
-    - cron: '0 2 * * *'
+    # UTC 1:00（北京 9:00）- 不推送通知
+    - cron: '0 1 * * *'
     # UTC 11:00（北京 19:00）- 推送通知
     - cron: '0 11 * * *'
 
@@ -34,17 +34,19 @@ jobs:
         python-version: '3.10'
         cache: 'pip'  # 启用pip缓存加速
     
-    # 下载之前保存的 Token 缓存（如果存在）
+    # 从上一次成功的 workflow run 下载 Token 缓存
     - name: 下载Token缓存
-      uses: actions/download-artifact@v4
+      uses: dawidd6/action-download-artifact@v3
       with:
+        workflow: run.yml
         name: encrypted-tokens
         path: artifact-download
+        search_artifacts: true
+        allow_forks: true
       continue-on-error: true
 
     - name: 恢复Token缓存文件
       run: |
-        # download-artifact v4 可能将文件放在同名子目录下，需兼容两种路径
         if [ -f "artifact-download/encrypted_tokens.data" ]; then
           cp artifact-download/encrypted_tokens.data ./encrypted_tokens.data
           echo "[成功] Token缓存已恢复"
@@ -55,12 +57,15 @@ jobs:
           echo "[信息] 无Token缓存文件，将创建新文件"
         fi
       
-    # 下载cron时间记录（用于推送时间判断）
+    # 从上一次成功的 workflow run 下载 cron 时间记录
     - name: 下载Cron时间记录
-      uses: actions/download-artifact@v4
+      uses: dawidd6/action-download-artifact@v3
       with:
+        workflow: run.yml
         name: cron-change-time
         path: .
+        search_artifacts: true
+        allow_forks: true
       continue-on-error: true
         
     - name: 安装依赖
