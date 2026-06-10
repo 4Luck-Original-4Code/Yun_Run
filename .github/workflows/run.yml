@@ -57,17 +57,6 @@ jobs:
           echo "[信息] 无Token缓存文件，将创建新文件"
         fi
       
-    # 从上一次成功的 workflow run 下载 cron 时间记录
-    - name: 下载Cron时间记录
-      uses: dawidd6/action-download-artifact@v3
-      with:
-        workflow: run.yml
-        name: cron-change-time
-        path: .
-        search_artifacts: true
-        allow_forks: true
-      continue-on-error: true
-        
     - name: 安装依赖
       run: |
         python -m pip install --upgrade pip
@@ -81,20 +70,6 @@ jobs:
         echo "时区: $(date +%Z)"
         ls -la
         
-    # 记录计划执行时间（用于推送时间判断）
-    - name: 记录计划执行时间
-      run: |
-        # 获取北京时间的小时数
-        beijing_hour=$(TZ=Asia/Shanghai date '+%-H')
-        beijing_minute=$(TZ=Asia/Shanghai date '+%M')
-        
-        # 写入cron_change_time文件
-        echo "planned exec time: 北京时间(${beijing_hour}:${beijing_minute})" > cron_change_time
-        echo "actual exec time: $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')" >> cron_change_time
-        
-        # 显示内容
-        cat cron_change_time
-        
     - name: 执行刷步数脚本
       env:
         ZEPP_USER: ${{ secrets.ZEPP_USER }}                    # Zepp账号（必需）
@@ -104,6 +79,7 @@ jobs:
         PUSH_PLUS_TOKEN: ${{ secrets.PUSH_PLUS_TOKEN }}        # PushPlus推送token（可选）
         PUSH_PLUS_HOUR: ${{ secrets.PUSH_PLUS_HOUR }}          # PushPlus推送整点时间0-23（可选）
         PUSH_WECHAT_WEBHOOK_KEY: ${{ secrets.PUSH_WECHAT_WEBHOOK_KEY }}  # 企业微信Webhook Key（可选）
+        SCHEDULED_CRON: ${{ github.event.schedule || '' }}     # 本次触发的cron表达式（用于判断是否推送）
       run: |
         python main.py
         
@@ -117,12 +93,4 @@ jobs:
         retention-days: 7                            #保存天数
         if-no-files-found: ignore
         
-    # 保存计划执行时间（用于推送时间判断）
-    - name: 上传Cron时间记录
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: cron-change-time
-        path: cron_change_time
-        retention-days: 7
-        if-no-files-found: ignore
+
