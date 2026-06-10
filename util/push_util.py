@@ -140,9 +140,12 @@ def build_wechat_content(title, content) -> str:
     return f"# {title}\n{content}"
 
 
-def push_results(exec_results, summary, config: PushConfig):
-    """统一推送入口：逐个推送到所有已配置的渠道"""
-    if not_in_push_time_range(config):
+def push_results(exec_results, summary, config: PushConfig, force_push: bool = False):
+    """统一推送入口：逐个推送到所有已配置的渠道
+
+    :param force_push: 为 True 时跳过时段检查，强制推送（用于晚间 cron 触发的统一推送）
+    """
+    if not force_push and not_in_push_time_range():
         return
 
     # 统计已配置的推送渠道数
@@ -156,14 +159,10 @@ def push_results(exec_results, summary, config: PushConfig):
     push_to_wechat_webhook(exec_results, summary, config)
 
 
-def not_in_push_time_range(config: PushConfig) -> bool:
+def not_in_push_time_range() -> bool:
     """
-    检查当前是否在推送时间段内
-
-    推送规则：
-    1. 当前北京时间在晚上时段（19:00-24:00）→ 允许推送
-    2. 其他时段 → 跳过推送
-    3. 若额外配置了 PUSH_PLUS_HOUR，则仅在晚上该整点推送
+    检查当前是否在推送时间段内（北京时间 19:00-24:00）
+    注意：force_push=True 时此函数不会被调用，见 push_results()
 
     :return: True=跳过, False=推送
     """
@@ -177,16 +176,7 @@ def not_in_push_time_range(config: PushConfig) -> bool:
         print(f"[推送时间] 当前{current_hour}:xx，非晚上时段，跳过推送")
         return True
 
-    # 如果配置了 PUSH_PLUS_HOUR，进一步限制只在该整点推送
-    if config.push_plus_hour and config.push_plus_hour.isdigit():
-        target_hour = int(config.push_plus_hour)
-        if current_hour != target_hour:
-            print(f"[推送时间] 当前{current_hour}:xx，目标{target_hour}:xx，时间不匹配，跳过推送")
-            return True
-        print(f"[推送时间] 当前{current_hour}:xx，晚上时段，匹配推送时间")
-    else:
-        print(f"[推送时间] 当前{current_hour}:xx，晚上时段，允许推送")
-
+    print(f"[推送时间] 当前{current_hour}:xx，晚上时段，允许推送")
     return False
 
 
@@ -223,6 +213,15 @@ def push_to_push_plus(exec_results, summary, config: PushConfig):
     if not config.push_plus_token or config.push_plus_token.upper() == 'NO':
         print("[推送] PushPlus未配置，跳过")
         return
+
+    # push_plus_hour 仅限制 PushPlus 渠道的推送整点
+    if config.push_plus_hour and config.push_plus_hour.isdigit():
+        time_bj = get_beijing_time()
+        current_hour = time_bj.hour
+        target_hour = int(config.push_plus_hour)
+        if current_hour != target_hour:
+            print(f"[推送] PushPlus整点限制: 当前{current_hour}:xx, 目标{target_hour}:xx，跳过PushPlus")
+            return
 
     html = f'<div>{summary}</div>'
     if len(exec_results) >= config.push_plus_max:
@@ -274,5 +273,3 @@ def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
     title = f"{format_now_bj()} 刷步通知"
     print(f"[推送] 发送企业微信...")
     push_wechat_webhook(config.push_wechat_webhook_key, title, content)
-
-
