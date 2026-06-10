@@ -39,8 +39,21 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: encrypted-tokens
-        path: .
+        path: artifact-download
       continue-on-error: true
+
+    - name: 恢复Token缓存文件
+      run: |
+        # download-artifact v4 可能将文件放在同名子目录下，需兼容两种路径
+        if [ -f "artifact-download/encrypted_tokens.data" ]; then
+          cp artifact-download/encrypted_tokens.data ./encrypted_tokens.data
+          echo "[成功] Token缓存已恢复"
+        elif [ -f "artifact-download/encrypted-tokens/encrypted_tokens.data" ]; then
+          cp artifact-download/encrypted-tokens/encrypted_tokens.data ./encrypted_tokens.data
+          echo "[成功] Token缓存已恢复（从子目录）"
+        else
+          echo "[信息] 无Token缓存文件，将创建新文件"
+        fi
       
     # 下载cron时间记录（用于推送时间判断）
     - name: 下载Cron时间记录
