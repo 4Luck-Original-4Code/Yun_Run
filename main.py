@@ -408,10 +408,9 @@ class ZeppStepRunner:
             except AttributeError:
                 pass
 
-    def execute(self, min_step: int, max_step: int, push_config=None) -> Tuple[str, bool]:
+    def execute(self, min_step: int, max_step: int) -> Tuple[str, bool]:
         """
         执行刷步数主逻辑
-        :param push_config: 推送配置对象（PushConfig）
         :return: (消息, 是否成功)
         """
         if self.invalid:
@@ -432,16 +431,12 @@ class ZeppStepRunner:
                         self.log_str += f"[重试] {Config.RETRY_DELAY}秒后进行第{attempt + 1}次登录重试...\n"
                         time.sleep(Config.RETRY_DELAY)
                     else:
-                        if push_config:
-                            self._send_login_failure_notification(push_config)
                         return f"[失败] 连续{Config.MAX_RETRY}次登录尝试均失败", False
                 else:
                     self.login_failure_count = 0
                     break
 
             if not app_token:
-                if push_config:
-                    self._send_login_failure_notification(push_config)
                 return self.error or "[失败] 登录失败", False
 
             step = random.randint(min_step, max_step)
@@ -483,26 +478,11 @@ class ZeppStepRunner:
         finally:
             self._clean_password()
 
-    def _send_login_failure_notification(self, push_config):
-        """发送登录失败通知（支持所有推送渠道）"""
-        current_time = format_now()
-        
-        # 构建执行结果格式，复用推送逻辑
-        exec_result = {
-            "user": desensitize_user_name(self.user),
-            "success": False,
-            "msg": f"连续{Config.MAX_RETRY}次登录尝试均失败"
-        }
-        summary = f"{current_time}\n\n登录失败 | 账号: {desensitize_user_name(self.user)}\n原因: 连续{Config.MAX_RETRY}次登录尝试均失败"
-        
-        print(f"[信息] 推送登录失败通知...", flush=True)
-        push_util.push_results([exec_result], summary, push_config)
-
 
 # ==================== 主执行函数 ====================
 
 def run_single_account(user: str, password: str,
-                       min_step: int, max_step: int, user_tokens: Dict, push_config=None) -> Dict:
+                       min_step: int, max_step: int, user_tokens: Dict) -> Dict:
     """执行单个账号的刷步数任务"""
     log_str = f"\n{'=' * 60}\n"
     log_str += f"[时间] {format_now()}\n"
@@ -511,7 +491,7 @@ def run_single_account(user: str, password: str,
 
     try:
         runner = ZeppStepRunner(user, password, user_tokens)
-        exec_msg, success = runner.execute(min_step, max_step, push_config)
+        exec_msg, success = runner.execute(min_step, max_step)
 
         log_str += runner.log_str
         log_str += f"{exec_msg}\n"
@@ -538,9 +518,9 @@ def run_single_account(user: str, password: str,
 
 
 def execute_single_account(user: str, password: str, min_step: int, max_step: int,
-                           user_tokens: Dict, push_config=None) -> List[Dict]:
+                           user_tokens: Dict) -> List[Dict]:
     """执行单个账号的刷步数任务"""
-    result = run_single_account(user, password, min_step, max_step, user_tokens, push_config)
+    result = run_single_account(user, password, min_step, max_step, user_tokens)
     return [result]
 
 
@@ -564,13 +544,19 @@ def main():
     push_plus_hour = os.environ.get('PUSH_PLUS_HOUR', '').strip()
     push_wechat_webhook_key = os.environ.get('PUSH_WECHAT_WEBHOOK_KEY', '').strip()
 
+    # 判断是否为晚间推送 cron（UTC 11:00 = 北京时间 19:00）
+    schedule_cron = os.environ.get('SCHEDULED_CRON', '').strip()
+    force_push = '0 11' in schedule_cron if schedule_cron else False
+
     print("[检查] 环境变量配置...", flush=True)
     print(f"  - USER存在: {bool(users)}", flush=True)
     print(f"  - PWD存在: {bool(passwords)}", flush=True)
     print(f"  - SCKEY存在: {bool(sckey)}", flush=True)
     print(f"  - PUSH_PLUS_TOKEN存在: {bool(push_plus_token)}", flush=True)
     print(f"  - WECHAT_WEBHOOK_KEY存在: {bool(push_wechat_webhook_key)}", flush=True)
-    print(f"  - AES_KEY存在: {bool(os.environ.get('AES_KEY'))}\n", flush=True)
+    print(f"  - AES_KEY存在: {bool(os.environ.get('AES_KEY'))}", flush=True)
+    print(f"  - SCHEDULED_CRON: {schedule_cron or '(无/手动触发)'}", flush=True)
+    print(f"  - 强制推送模式: {'是' if force_push else '否'}\n", flush=True)
 
     if not users or not passwords:
         print("[错误] 缺少必需的环境变量: ZEPP_USER 或 ZEPP_PWD", flush=True)
@@ -603,7 +589,7 @@ def main():
     if push_wechat_webhook_key and push_wechat_webhook_key != 'NO':
         push_channels.append("企业微信")
 
-    # 创建推送配置对象（用于登录失败通知和最终结果推送）
+    # 创建推送配置对象（用于最终结果统一推送）
     push_config = None
     if push_channels:
         push_config = push_util.PushConfig(
@@ -617,7 +603,7 @@ def main():
     try:
         exec_results = execute_single_account(
             users, passwords, min_step, max_step,
-            user_tokens, push_config
+            user_tokens
         )
     except Exception as e:
         print(f"\n[错误] 执行过程中发生异常: {str(e)}", flush=True)
@@ -641,10 +627,10 @@ def main():
     if total_steps > 0:
         summary += f"，总步数：{total_steps}"
 
-    # 推送通知（使用统一的推送模块）
-    if not is_manual_trigger() and push_channels and push_config:
+    # 推送通知：晚间 cron（UTC 11:00 = 北京 19:00）无条件推送所有结果（成功+失败）
+    if force_push and push_channels and push_config:
         try:
-            push_util.push_results(exec_results, summary, push_config)
+            push_util.push_results(exec_results, summary, push_config, force_push=True)
         except Exception as e:
             print(f"[警告] 推送通知失败: {str(e)}", flush=True)
 
