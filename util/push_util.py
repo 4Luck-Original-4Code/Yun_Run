@@ -4,7 +4,6 @@
 支持多种推送方式：Server酱、PushPlus、企业微信 Webhook
 """
 import json
-import re
 import requests
 from datetime import datetime
 import pytz
@@ -27,12 +26,10 @@ class PushConfig:
     def __init__(self,
                  sckey=None,
                  push_plus_token=None,
-                 push_plus_hour=None,
                  push_plus_max=30,
                  push_wechat_webhook_key=None):
         self.sckey = sckey
         self.push_plus_token = push_plus_token
-        self.push_plus_hour = push_plus_hour
         self.push_plus_max = int(push_plus_max) if push_plus_max else 30
         self.push_wechat_webhook_key = push_wechat_webhook_key
 
@@ -140,7 +137,7 @@ def build_wechat_content(title, content) -> str:
     return f"# {title}\n{content}"
 
 
-def push_results(exec_results, summary, config: PushConfig, force_push: bool = False):
+def push_results(exec_results, config: PushConfig, force_push: bool = False):
     """统一推送入口：逐个推送到所有已配置的渠道
 
     :param force_push: 为 True 时跳过时段检查，强制推送（用于晚间 cron 触发的统一推送）
@@ -154,9 +151,9 @@ def push_results(exec_results, summary, config: PushConfig, force_push: bool = F
     if active_channels > 0:
         print(f"\n[信息] 开始推送通知到 {active_channels} 个渠道...", flush=True)
 
-    push_to_server_chan(exec_results, summary, config)
-    push_to_push_plus(exec_results, summary, config)
-    push_to_wechat_webhook(exec_results, summary, config)
+    push_to_server_chan(exec_results, config)
+    push_to_push_plus(exec_results, config)
+    push_to_wechat_webhook(exec_results, config)
 
 
 def not_in_push_time_range() -> bool:
@@ -180,95 +177,63 @@ def not_in_push_time_range() -> bool:
     return False
 
 
-def push_to_server_chan(exec_results, summary, config: PushConfig):
+def push_to_server_chan(exec_results, config: PushConfig):
     """Server酱推送"""
     if not config.sckey or config.sckey.upper() == 'NO':
         print("[推送] Server酱未配置，跳过")
         return
 
-    body = f"{summary}\n\n"
-    if len(exec_results) >= config.push_plus_max:
-        body += "账号过多，详情请查看 GitHub Actions\n"
+    # 简化推送内容：仅显示时间、状态和步数
+    all_success = all(r.get('success', False) for r in exec_results)
+    total_step = sum(r.get('step', 0) for r in exec_results if r.get('success'))
+    fail_count = sum(1 for r in exec_results if not r.get('success'))
+
+    if all_success:
+        body = f"{format_now_bj()}，成功SUCCESS 步数：{total_step}"
     else:
-        for exec_result in exec_results:
-            user = exec_result.get('user', '未知')
-            success = exec_result.get('success', False)
-            msg = exec_result.get('msg', '无信息')
-            step = exec_result.get('step')
-            if success:
-                if step:
-                    body += f"账号：{user} | 步数：{step} | {msg}\n"
-                else:
-                    body += f"账号：{user} | {msg}\n"
-            else:
-                body += f"账号：{user} | 失败原因：{msg}\n"
+        body = f"{format_now_bj()}，成功：{len(exec_results) - fail_count}，失败：{fail_count}，步数：{total_step}"
 
     title = "刷步通知"
     print(f"[推送] 发送Server酱...")
     server_send(title, body, config.sckey)
 
 
-def push_to_push_plus(exec_results, summary, config: PushConfig):
+def push_to_push_plus(exec_results, config: PushConfig):
     """PushPlus推送（HTML）"""
     if not config.push_plus_token or config.push_plus_token.upper() == 'NO':
         print("[推送] PushPlus未配置，跳过")
         return
 
-    # push_plus_hour 仅限制 PushPlus 渠道的推送整点
-    if config.push_plus_hour and config.push_plus_hour.isdigit():
-        time_bj = get_beijing_time()
-        current_hour = time_bj.hour
-        target_hour = int(config.push_plus_hour)
-        if current_hour != target_hour:
-            print(f"[推送] PushPlus整点限制: 当前{current_hour}:xx, 目标{target_hour}:xx，跳过PushPlus")
-            return
+    # 简化推送内容：仅显示时间、状态和步数
+    all_success = all(r.get('success', False) for r in exec_results)
+    total_step = sum(r.get('step', 0) for r in exec_results if r.get('success'))
+    fail_count = sum(1 for r in exec_results if not r.get('success'))
 
-    html = f'<div>{summary}</div>'
-    if len(exec_results) >= config.push_plus_max:
-        html += '<div>账号过多，详情请查看 GitHub Actions</div>'
+    if all_success:
+        html = f'<div>{format_now_bj()}，成功SUCCESS 步数：{total_step}</div>'
     else:
-        html += '<ul>'
-        for exec_result in exec_results:
-            user = exec_result.get('user', '未知')
-            success = exec_result.get('success', False)
-            msg = exec_result.get('msg', '无信息')
-            step = exec_result.get('step')
-            if success:
-                if step:
-                    html += f'<li><span>账号：{user}</span> | 步数：{step} | {msg}</li>'
-                else:
-                    html += f'<li><span>账号：{user}</span> | {msg}</li>'
-            else:
-                html += f'<li><span>账号：{user}</span> | 失败原因：{msg}</li>'
-        html += '</ul>'
+        html = f'<div>{format_now_bj()}，成功：{len(exec_results) - fail_count}，失败：{fail_count}，步数：{total_step}</div>'
 
     title = f"{format_now_bj()} 刷步通知"
     print(f"[推送] 发送PushPlus...")
     push_plus(config.push_plus_token, title, html)
 
 
-def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
+def push_to_wechat_webhook(exec_results, config: PushConfig):
     """企业微信推送（Markdown V2）"""
     if not config.push_wechat_webhook_key or config.push_wechat_webhook_key.upper() == 'NO':
         print("[推送] 企业微信未配置，跳过")
         return
 
-    content = f'## {summary}'
-    if len(exec_results) >= config.push_plus_max:
-        content += '\n- 账号过多，详情请查看 GitHub Actions'
+    # 简化推送内容：仅显示时间、状态和步数
+    all_success = all(r.get('success', False) for r in exec_results)
+    total_step = sum(r.get('step', 0) for r in exec_results if r.get('success'))
+    fail_count = sum(1 for r in exec_results if not r.get('success'))
+
+    if all_success:
+        content = f'## {format_now_bj()}，成功SUCCESS 步数：{total_step}'
     else:
-        for exec_result in exec_results:
-            user = exec_result.get('user', '未知')
-            success = exec_result.get('success', False)
-            msg = exec_result.get('msg', '无信息')
-            step = exec_result.get('step')
-            if success:
-                if step:
-                    content += f'\n-账号：{user} | 步数：{step} | {msg}'
-                else:
-                    content += f'\n-账号：{user} | {msg}'
-            else:
-                content += f'\n-账号：{user} | 失败原因：{msg}'
+        content = f'## {format_now_bj()}，成功：{len(exec_results) - fail_count}，失败：{fail_count}，步数：{total_step}'
 
     title = f"{format_now_bj()} 刷步通知"
     print(f"[推送] 发送企业微信...")
