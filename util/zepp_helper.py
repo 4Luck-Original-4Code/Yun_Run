@@ -176,18 +176,18 @@ def grant_app_token(login_token: str) -> Tuple[Optional[str], Optional[str]]:
     return app_token, None
 
 
-def check_app_token(app_token, userid="1188760659") -> Tuple[bool, Optional[str]]:
+def check_app_token(app_token, userid=None) -> Tuple[bool, Optional[str]]:
     """
     检查app_token是否有效
     :param app_token: 应用token
-    :param userid: 用户ID（默认值用于快速验证）
+    :param userid: 用户ID
     :return: (是否有效, 错误信息)
     """
     url = "https://api-mifit-cn3.zepp.com/huami.health.getUserInfo.json"
 
     params = {
         "r": "00b7912b-790a-4552-81b1-3742f9dd1e76",
-        "userid": userid,
+        "userid": userid or "",
         "appid": "428135909242707968",
         "channel": "Normal",
         "country": "CN",
