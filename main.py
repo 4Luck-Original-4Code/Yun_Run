@@ -270,7 +270,7 @@ class ZeppStepRunner:
 
             if app_token:
                 try:
-                    ok, msg = zepphelper.check_app_token(app_token)
+                    ok, msg = zepphelper.check_app_token(app_token, self.user_id)
                     if ok:
                         self.log_str += "[成功] 使用缓存的app_token\n"
                         return app_token
