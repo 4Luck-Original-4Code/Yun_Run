@@ -12,11 +12,12 @@ AES_BLOCK_SIZE = AES.block_size  # 16
 
 
 def get_aes_key():
-    """获取AES密钥：从环境变量获取"""
+    """获取AES密钥：从环境变量获取，未设置时返回None"""
     aes_key = os.environ.get('AES_KEY')
     if aes_key and len(aes_key) == 16:
         return aes_key.encode('utf-8')
-    raise ValueError("AES_KEY environment variable not set or invalid")
+    print("[警告] AES_KEY环境变量未设置或无效，将返回None")
+    return None
 
 
 def _pkcs7_pad(data: bytes) -> bytes:
