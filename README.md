@@ -6,7 +6,7 @@
 - **自动/手动触发**：每天北京时间上午和晚上各自动运行一次，也支持手动触发。
 - **随机步数**：根据时间段智能生成步数范围（例如晚上 31000-35000 步）。
 - **Token缓存**：使用加密文件持久化 Token，避免频繁登录。
-- **多渠推送通知**：支持 Server酱、PushPlus、企业微信 Webhook 三种推送方式。
+- **多渠道推送通知**：支持 Server酱、PushPlus、企业微信 Webhook 三种推送方式。
 - **智能推送时间**：直接根据触发执行的 cron 表达式判断，无需额外文件同步。
 - **安全加密**：使用 AES 加密保护 Token 和传输数据。
 - **错误重试**：登录和步数提交失败时自动重试最多 3 次。
@@ -22,8 +22,7 @@
      - `AES_KEY`：16 字节的 AES 加密密钥（自定义，例如 `xeNtBVqzDc6tuNTh`）。
    - 添加以下 Secrets（可选，用于推送通知）：
      - `SCKEY`：Server酱推送密钥（关注wx服务号`方糖`获取）。
-     - `PUSH_PLUS_TOKEN`：PushPlus 推送 token（访问 http://www.pushplus.plus 注册获取，推荐选择用户Token）。
-     - `PUSH_PLUS_HOUR`：PushPlus 推送时间整点（0-23，不填则总是推送）。
+     - `PUSH_PLUS_TOKEN`：PushPlus 推送 token（访问 http://www.pushplus.plus 注册获取）。
      - `PUSH_WECHAT_WEBHOOK_KEY`：企业微信机器人 Webhook Key。
 3. **启用 Actions**：仓库 Settings > Actions > General > Workflow permissions > Read and write permissions > Save。
 4. **运行 Workflow**：
