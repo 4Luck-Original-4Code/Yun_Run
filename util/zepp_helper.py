@@ -279,8 +279,8 @@ def update_step(app_token, userid, step, ip):
     if not step_matches:
         return False, "DATA_JSON格式异常：无法匹配步数占位符"
     
-    data_json = re.sub(date_matches[0], today, str(data_json))
-    data_json = re.sub(step_matches[0], str(step), str(data_json))
+    data_json = str(data_json).replace(date_matches[0], today)
+    data_json = data_json.replace(step_matches[0], str(step))
 
     url = f'https://api-mifit-cn.huami.com/v1/data/band_data.json?&t={t}&r={str(uuid.uuid4())}'
     head = {
