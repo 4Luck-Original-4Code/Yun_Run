@@ -76,7 +76,7 @@ def push_plus(token, title, content, timeout: int = 30):
         print("[推送] PushPlus未配置，跳过")
         return
 
-    requestUrl = "https://www.pushplus.plus/send"
+    request_url = "https://www.pushplus.plus/send"
     data = {
         "token": token,
         "title": title,
@@ -85,7 +85,7 @@ def push_plus(token, title, content, timeout: int = 30):
         "channel": "wechat"
     }
     try:
-        response = requests.post(requestUrl, data=data, timeout=timeout)
+        response = requests.post(request_url, data=data, timeout=timeout)
         if response.status_code == 200:
             json_res = response.json()
             code = json_res.get('code', -1)
@@ -108,7 +108,7 @@ def push_wechat_webhook(key, title, content, timeout: int = 30):
         print("[推送] 企业微信未配置，跳过")
         return
 
-    requestUrl = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={key}"
+    request_url = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={key}"
 
     payload = {
         "msgtype": "markdown_v2",
@@ -118,7 +118,7 @@ def push_wechat_webhook(key, title, content, timeout: int = 30):
     }
 
     try:
-        response = requests.post(requestUrl, json=payload, timeout=timeout)
+        response = requests.post(request_url, json=payload, timeout=timeout)
         if response.status_code == 200:
             json_res = response.json()
             errcode = json_res.get('errcode', -1)
@@ -188,7 +188,7 @@ def push_to_server_chan(exec_results, summary, config: PushConfig):
 
     body = f"{summary}\n\n"
     if len(exec_results) >= config.push_plus_max:
-        body += "⚠️ 账号过多，详情请查看 GitHub Actions\n"
+        body += "账号过多，详情请查看 GitHub Actions\n"
     else:
         for exec_result in exec_results:
             user = exec_result.get('user', '未知')
@@ -197,11 +197,11 @@ def push_to_server_chan(exec_results, summary, config: PushConfig):
             step = exec_result.get('step')
             if success:
                 if step:
-                    body += f"✅ 账号：{user} | 步数：{step} | {msg}\n"
+                    body += f"账号：{user} | 步数：{step} | {msg}\n"
                 else:
-                    body += f"✅ 账号：{user} | {msg}\n"
+                    body += f"账号：{user} | {msg}\n"
             else:
-                body += f"❌ 账号：{user} | 失败原因：{msg}\n"
+                body += f"账号：{user} | 失败原因：{msg}\n"
 
     title = "刷步通知"
     print(f"[推送] 发送Server酱...")
@@ -225,7 +225,7 @@ def push_to_push_plus(exec_results, summary, config: PushConfig):
 
     html = f'<div>{summary}</div>'
     if len(exec_results) >= config.push_plus_max:
-        html += '<div>⚠️ 账号过多，详情请查看 GitHub Actions</div>'
+        html += '<div>账号过多，详情请查看 GitHub Actions</div>'
     else:
         html += '<ul>'
         for exec_result in exec_results:
@@ -255,7 +255,7 @@ def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
 
     content = f'## {summary}'
     if len(exec_results) >= config.push_plus_max:
-        content += '\n- ⚠️ 账号过多，详情请查看 GitHub Actions'
+        content += '\n- 账号过多，详情请查看 GitHub Actions'
     else:
         for exec_result in exec_results:
             user = exec_result.get('user', '未知')
@@ -264,11 +264,11 @@ def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
             step = exec_result.get('step')
             if success:
                 if step:
-                    content += f'\n- ✅ 账号：{user} | 步数：{step} | {msg}'
+                    content += f'\n-账号：{user} | 步数：{step} | {msg}'
                 else:
-                    content += f'\n- ✅ 账号：{user} | {msg}'
+                    content += f'\n-账号：{user} | {msg}'
             else:
-                content += f'\n- ❌ 账号：{user} | 失败原因：{msg}'
+                content += f'\n-账号：{user} | 失败原因：{msg}'
 
     title = f"{format_now_bj()} 刷步通知"
     print(f"[推送] 发送企业微信...")
