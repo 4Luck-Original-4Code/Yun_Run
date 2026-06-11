@@ -131,7 +131,7 @@ def grant_login_tokens(access_token, device_id, is_phone=False) -> Tuple[Optiona
         }
     else:
         data = {
-            "allow_registration=": "false",
+            "allow_registration": "false",
             "app_name": "com.xiaomi.hm.health",
             "app_version": "6.14.0",
             "code": access_token,
