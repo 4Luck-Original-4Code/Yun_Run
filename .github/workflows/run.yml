@@ -9,12 +9,11 @@ on:
         required: false
         default: 'true'
   
-  # 每天自动运行2次（UTC时间）
+
+  # 每日各时段首次触发执行一次（task_state.json 去重）
   schedule:
-    # UTC 1:00（北京 9:00）- 不推送通知
-    - cron: '0 1 * * *'
-    # UTC 11:00（北京 19:00）- 推送通知
-    - cron: '0 11 * * *'
+    - cron: '*/5 2-3 * * *'   # BJ 10:00-11:59
+    - cron: '*/5 11-12 * * *'  # BJ 19:00-20:59
 
 jobs:
   run-script:
@@ -45,8 +44,9 @@ jobs:
         allow_forks: true
       continue-on-error: true
 
-    - name: 恢复Token缓存文件
+    - name: 恢复缓存文件
       run: |
+        # 恢复 Token 缓存
         if [ -f "artifact-download/encrypted_tokens.data" ]; then
           cp artifact-download/encrypted_tokens.data ./encrypted_tokens.data
           echo "[成功] Token缓存已恢复"
@@ -55,6 +55,16 @@ jobs:
           echo "[成功] Token缓存已恢复（从子目录）"
         else
           echo "[信息] 无Token缓存文件，将创建新文件"
+        fi
+        # 恢复任务状态文件（用于每日去重）
+        if [ -f "artifact-download/task_state.json" ]; then
+          cp artifact-download/task_state.json ./task_state.json
+          echo "[成功] 任务状态已恢复"
+        elif [ -f "artifact-download/encrypted-tokens/task_state.json" ]; then
+          cp artifact-download/encrypted-tokens/task_state.json ./task_state.json
+          echo "[成功] 任务状态已恢复（从子目录）"
+        else
+          echo "[信息] 无任务状态文件，将创建新文件"
         fi
       
     - name: 安装依赖
@@ -77,19 +87,19 @@ jobs:
         AES_KEY: ${{ secrets.AES_KEY }}                        # AES加密密钥（必需，16字节）
         SCKEY: ${{ secrets.SCKEY }}                            # Server酱推送密钥（可选）
         PUSH_PLUS_TOKEN: ${{ secrets.PUSH_PLUS_TOKEN }}        # PushPlus推送token（可选）
-        PUSH_PLUS_HOUR: ${{ secrets.PUSH_PLUS_HOUR }}          # PushPlus推送整点时间0-23（可选）
         PUSH_WECHAT_WEBHOOK_KEY: ${{ secrets.PUSH_WECHAT_WEBHOOK_KEY }}  # 企业微信Webhook Key（可选）
-        SCHEDULED_CRON: ${{ github.event.schedule || '' }}     # 本次触发的cron表达式（用于判断是否推送）
       run: |
         python main.py
         
-    # 保存Token缓存（用于下次运行）
-    - name: 上传Token缓存
+    # 保存缓存文件（用于下次运行）
+    - name: 上传缓存文件
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: encrypted-tokens
-        path: encrypted_tokens.data
+        path: |
+          encrypted_tokens.data
+          task_state.json
         retention-days: 7                            #保存天数
         if-no-files-found: ignore
         
