@@ -94,11 +94,6 @@ def get_beijing_time():
     return datetime.now().astimezone(target_timezone)
 
 
-def format_now():
-    """格式化当前时间（北京时间）"""
-    return get_beijing_time().strftime("%Y-%m-%d %H:%M:%S")
-
-
 def get_time():
     """获取时间戳（毫秒）"""
     current_time = get_beijing_time()
@@ -225,40 +220,6 @@ def check_app_token(app_token, userid=None) -> Tuple[bool, Optional[str]]:
         return True, None
     else:
         return False, message
-
-
-def renew_login_token(login_token) -> Tuple[Optional[str], Optional[str]]:
-    url = "https://account-cn3.zepp.com/v1/client/renew_login_token"
-    params = {
-        "os_version": "v0.8.1",
-        "dn": "account.zepp.com,api-user.zepp.com,api-mifit.zepp.com,api-watch.zepp.com,app-analytics.zepp.com,api-analytics.huami.com,auth.zepp.com",
-        "login_token": login_token,
-        "source": "com.xiaomi.hm.health:6.14.0:50818",
-        "timestamp": get_time()
-    }
-    headers = {
-        "User-Agent": "MiFit6.14.0 (M2007J1SC; Android 12; Density/2.75)",
-        "Accept-Encoding": "gzip",
-        "app_name": "com.xiaomi.hm.health",
-        "hm-privacy-ceip": "false",
-        "x-request-id": str(uuid.uuid4()),
-        "accept-language": "zh-CN",
-        "appname": "com.xiaomi.hm.health",
-        "cv": "50818_6.14.0",
-        "v": "2.0",
-        "appplatform": "android_phone"
-    }
-
-    resp = requests.get(url, params=params, headers=headers)
-    if resp.status_code != 200:
-        return None, "请求异常：%d" % resp.status_code
-    resp = resp.json()
-    result = resp["result"]
-
-    if result != "ok":
-        return None, "请求失败：%s" % result
-    login_token = resp["token_info"]["login_token"]
-    return login_token, None
 
 
 def update_step(app_token, userid, step, ip):
