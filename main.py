@@ -184,14 +184,18 @@ def prepare_user_tokens(aes_key: bytes = None) -> Dict:
         return {}
 
 
-def persist_user_tokens(user_tokens: Dict) -> bool:
+def persist_user_tokens(user_tokens: Dict, aes_key: bytes = None) -> bool:
     """
     保存Token到加密文件
+    :param aes_key: AES密钥，如果为None则从环境变量获取
     :return: 是否保存成功
     """
     try:
         origin_str = json.dumps(user_tokens, ensure_ascii=False, indent=2)
-        encrypted_data = encrypt_data(origin_str.encode("utf-8"), get_aes_key(), None)
+        if aes_key is None:
+            from util.aes_help import get_aes_key
+            aes_key = get_aes_key()
+        encrypted_data = encrypt_data(origin_str.encode("utf-8"), aes_key, None)
 
         with open(Config.TOKEN_FILE, 'wb') as f:
             f.write(encrypted_data)
@@ -613,7 +617,7 @@ def main():
     # 保存 Token 缓存（模仿 mimotion-master 的持久化逻辑）
     if aes_key and user_tokens:
         try:
-            persist_user_tokens(user_tokens)
+            persist_user_tokens(user_tokens, aes_key)
         except Exception as e:
             print(f"[警告] Token保存失败: {str(e)}", flush=True)
 
