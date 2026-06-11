@@ -678,8 +678,8 @@ def main():
     # 统计结果
     fail_count = sum(1 for r in exec_results if not r.get('success'))
 
-    # 晚间时段（19:00-23:59）自动推送通知
-    if current_period == 'evening' and 19 <= bj_hour <= 23 and push_channels and push_config:
+    # 晚间时段（19:00-23:59）自动推送通知（手动触发不推送）
+    if not is_manual_trigger() and current_period == 'evening' and 19 <= bj_hour <= 23 and push_channels and push_config:
         push_util.push_results(exec_results, push_config, force_push=True)
 
     sys.exit(0 if fail_count == 0 else 1)
