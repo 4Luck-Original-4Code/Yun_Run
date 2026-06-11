@@ -1,6 +1,5 @@
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
-import base64
 import os
 
 # 华米传输加密使用的密钥 固定iv
@@ -118,38 +117,3 @@ def decrypt_data(data: bytes, key: bytes, iv: bytes | None = None) -> bytes:
     return _pkcs7_unpad(decrypted_padded)
 
 
-# 华米API专用加密函数（使用固定密钥和IV）
-def encrypt_huami_data(plain: bytes) -> bytes:
-    """使用华米固定密钥和IV加密数据"""
-    return encrypt_data(plain, HM_AES_KEY, HM_AES_IV)
-
-
-def decrypt_huami_data(data: bytes) -> bytes:
-    """使用华米固定密钥和IV解密数据"""
-    return decrypt_data(data, HM_AES_KEY, HM_AES_IV)
-
-
-def bytes_to_base64(data: bytes) -> str:
-    """
-    将字节数据转换为Base64编码字符串
-    
-    Args:
-        data: 需要编码的字节数据
-        
-    Returns:
-        Base64编码的字符串
-    """
-    return base64.b64encode(data).decode('utf-8')
-
-
-def base64_to_bytes(data: str) -> bytes:
-    """
-    将Base64编码字符串转换为字节数据
-    
-    Args:
-        data: Base64编码的字符串
-        
-    Returns:
-        解码后的字节数据
-    """
-    return base64.b64decode(data.encode('utf-8'))
