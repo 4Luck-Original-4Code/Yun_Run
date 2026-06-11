@@ -76,7 +76,7 @@ def push_plus(token, title, content, timeout: int = 30):
         print("[推送] PushPlus未配置，跳过")
         return
 
-    requestUrl = "http://www.pushplus.plus/send"
+    requestUrl = "https://www.pushplus.plus/send"
     data = {
         "token": token,
         "title": title,
