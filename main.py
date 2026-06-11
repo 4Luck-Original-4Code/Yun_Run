@@ -15,7 +15,6 @@ import os
 import sys
 from typing import Optional, Tuple, Dict, List
 
-import requests
 from util.aes_help import encrypt_data, decrypt_data, get_aes_key
 import util.zepp_helper as zepphelper
 import util.push_util as push_util
@@ -26,47 +25,23 @@ import util.push_util as push_util
 class Config:
     """全局配置类"""
     TOKEN_FILE = "encrypted_tokens.data"
+    TASK_STATE_FILE = "task_state.json"
     DEFAULT_MIN_STEP = 10000
     DEFAULT_MAX_STEP = 35000
-    DEFAULT_SLEEP_GAP = 5.0
     REQUEST_TIMEOUT = 30
     MAX_RETRY = 3
     RETRY_DELAY = 2
 
     # 时间段步数配置（北京时间）
     MANUAL_STEP_RANGES = {
-        'night': (10000, 20000),  # 北京 1-5点(UTC 17-21点)
-        'morning': (10000, 20000),  # 北京 6-12点(UTC 22-4点，跨天)
-        'afternoon': (21000, 30000),  # 北京 13-18点(UTC 5-10点)
-        'evening': (31000, 35000),  # 北京 19-23/0点(UTC 11-15/16点)
+        'night': (10000, 20000),  # 北京 1-5点
+        'morning': (10000, 20000),  # 北京 6-12点
+        'afternoon': (21000, 30000),  # 北京 13-18点
+        'evening': (31000, 35000),  # 北京 19-23/0点
     }
 
 
 # ==================== 工具函数 ====================
-
-def get_int_value_default(value: str, default: int) -> int:
-    """获取环境变量的整数值，提供默认值"""
-    try:
-        return int(value) if value else default
-    except (ValueError, TypeError):
-        print(f"[警告] 值 {value} 无效，使用默认值: {default}")
-        return default
-
-
-def get_float_value_default(value: str, default: float) -> float:
-    """获取环境变量的浮点值，提供默认值"""
-    try:
-        return float(value) if value else default
-    except (ValueError, TypeError):
-        print(f"[警告] 值 {value} 无效，使用默认值: {default}")
-        return default
-
-
-def get_bool_value_default(value: str, default: bool) -> bool:
-    """获取环境变量的布尔值，提供默认值"""
-    if not value:
-        return default
-    return value.upper() in ('TRUE', '1', 'YES', 'ON')
 
 
 def get_beijing_time() -> datetime:
@@ -110,6 +85,67 @@ def desensitize_user_name(user: str) -> str:
 def is_manual_trigger() -> bool:
     """判断是否为手动触发"""
     return os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch'
+
+
+def get_current_period(hour: int = None) -> Optional[str]:
+    """
+    根据北京时间小时获取当前时段名称
+    时段划分（北京时间）:
+    - night:   01:00-05:59
+    - morning: 06:00-12:59
+    - afternoon: 13:00-18:59
+    - evening: 19:00-00:59
+    """
+    if hour is None:
+        hour = get_beijing_time().hour
+
+    if 1 <= hour <= 5:
+        return 'night'
+    elif 6 <= hour <= 12:
+        return 'morning'
+    elif 13 <= hour <= 18:
+        return 'afternoon'
+    elif 19 <= hour <= 23 or hour == 0:
+        return 'evening'
+    return None
+
+
+def load_task_state() -> dict:
+    """
+    加载任务状态文件，用于高频触发时同一天同一时段只执行一次
+    文件结构: {"date": "2026-06-11", "periods": {"night": bool, "morning": bool, ...}}
+    """
+    default_state = {
+        "date": get_beijing_time().strftime("%Y-%m-%d"),
+        "periods": {"night": False, "morning": False, "afternoon": False, "evening": False}
+    }
+
+    if not os.path.exists(Config.TASK_STATE_FILE):
+        return default_state
+
+    try:
+        with open(Config.TASK_STATE_FILE, 'r', encoding='utf-8') as f:
+            state = json.load(f)
+
+        today = get_beijing_time().strftime("%Y-%m-%d")
+        if state.get("date") != today:
+            print(f"[信息] 日期变更: {state.get('date')} -> {today}，重置任务状态")
+            return default_state
+
+        return state
+    except Exception as e:
+        print(f"[警告] 任务状态文件读取失败: {str(e)}")
+        return default_state
+
+
+def save_task_state(state: dict):
+    """保存任务状态到文件"""
+    try:
+        state["date"] = get_beijing_time().strftime("%Y-%m-%d")
+        with open(Config.TASK_STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[警告] 任务状态保存失败: {str(e)}")
 
 
 def get_min_max_by_time(hour: int = None, minute: int = None) -> Tuple[int, int]:
@@ -545,12 +581,27 @@ def main():
     
     # 读取其他推送配置
     push_plus_token = os.environ.get('PUSH_PLUS_TOKEN', '').strip()
-    push_plus_hour = os.environ.get('PUSH_PLUS_HOUR', '').strip()
     push_wechat_webhook_key = os.environ.get('PUSH_WECHAT_WEBHOOK_KEY', '').strip()
 
-    # 判断是否为晚间推送 cron（UTC 11:00 = 北京时间 19:00）
-    schedule_cron = os.environ.get('SCHEDULED_CRON', '').strip()
-    force_push = '0 11' in schedule_cron if schedule_cron else False
+    # 获取北京时间并判断当前时段
+    bj_time = get_beijing_time()
+    bj_hour = bj_time.hour
+    current_period = get_current_period(bj_hour)
+
+    print(f"[时间] 北京时间: {bj_time.strftime('%H:%M:%S')}, 当前时段: {current_period or '非任务时段'}", flush=True)
+
+    # 仅允许 morning 和 evening 时段自动执行，其他时段跳过
+    if not is_manual_trigger() and current_period and current_period not in ('morning', 'evening'):
+        print(f"[跳过] 仅允许morning/evening时段自动执行，当前时段 '{current_period}'，跳过本次\n", flush=True)
+        sys.exit(0)
+
+    # 高频定时触发模式下，使用任务状态文件确保同一天同一时段只执行一次
+    task_state = None
+    if not is_manual_trigger() and current_period:
+        task_state = load_task_state()
+        if task_state["periods"].get(current_period, False):
+            print(f"[跳过] 时段 '{current_period}' 的任务今天已在 {task_state['date']} 执行过，跳过本次\n", flush=True)
+            sys.exit(0)
 
     print("[检查] 环境变量配置...", flush=True)
     print(f"  - USER存在: {bool(users)}", flush=True)
@@ -559,8 +610,7 @@ def main():
     print(f"  - PUSH_PLUS_TOKEN存在: {bool(push_plus_token)}", flush=True)
     print(f"  - WECHAT_WEBHOOK_KEY存在: {bool(push_wechat_webhook_key)}", flush=True)
     print(f"  - AES_KEY存在: {bool(os.environ.get('AES_KEY'))}", flush=True)
-    print(f"  - SCHEDULED_CRON: {schedule_cron or '(无/手动触发)'}", flush=True)
-    print(f"  - 强制推送模式: {'是' if force_push else '否'}\n", flush=True)
+    print(f"  - 当前时段: {current_period or '无'}\n", flush=True)
 
     if not users or not passwords:
         print("[错误] 缺少必需的环境变量: ZEPP_USER 或 ZEPP_PWD", flush=True)
@@ -582,7 +632,7 @@ def main():
         print("[警告] 未设置AES_KEY，无法使用Token缓存功能", flush=True)
 
     # 计算步数范围
-    min_step, max_step = get_min_max_by_time()
+    min_step, max_step = get_min_max_by_time(bj_hour, bj_time.minute)
     print(f"[信息] 步数范围: {min_step} ~ {max_step}", flush=True)
     
     push_channels = []
@@ -599,7 +649,6 @@ def main():
         push_config = push_util.PushConfig(
             sckey=sckey if sckey and sckey != 'NO' else None,
             push_plus_token=push_plus_token if push_plus_token and push_plus_token != 'NO' else None,
-            push_plus_hour=push_plus_hour if push_plus_hour else None,
             push_wechat_webhook_key=push_wechat_webhook_key if push_wechat_webhook_key and push_wechat_webhook_key != 'NO' else None
         )
 
@@ -614,29 +663,24 @@ def main():
         traceback.print_exc()
         sys.exit(1)
 
-    # 保存 Token 缓存（模仿 mimotion-master 的持久化逻辑）
+    # 保存 Token 缓存
     if aes_key and user_tokens:
         try:
             persist_user_tokens(user_tokens, aes_key)
         except Exception as e:
             print(f"[警告] Token保存失败: {str(e)}", flush=True)
 
+    # 保存任务状态（标记当前时段已完成）
+    if task_state and current_period:
+        task_state["periods"][current_period] = True
+        save_task_state(task_state)
+
     # 统计结果
-    total = len(exec_results)
-    success_count = sum(1 for r in exec_results if r.get('success'))
-    fail_count = total - success_count
-    total_steps = sum(r.get('step', 0) for r in exec_results if r.get('success'))
+    fail_count = sum(1 for r in exec_results if not r.get('success'))
 
-    summary = f"\n执行账号总数{total}，成功：{success_count}，失败：{fail_count}"
-    if total_steps > 0:
-        summary += f"，总步数：{total_steps}"
-
-    # 推送通知：晚间 cron（UTC 11:00 = 北京 19:00）无条件推送所有结果（成功+失败）
-    if force_push and push_channels and push_config:
-        try:
-            push_util.push_results(exec_results, summary, push_config, force_push=True)
-        except Exception as e:
-            print(f"[警告] 推送通知失败: {str(e)}", flush=True)
+    # 晚间时段（19:00-23:59）自动推送通知
+    if current_period == 'evening' and 19 <= bj_hour <= 23 and push_channels and push_config:
+        push_util.push_results(exec_results, push_config, force_push=True)
 
     sys.exit(0 if fail_count == 0 else 1)
 
