@@ -641,7 +641,7 @@ def main():
 
     # 计算步数范围
     min_step, max_step = get_min_max_by_time(bj_time.hour, bj_time.minute)
-    print(f"[信息] 步数范围: {min_step} ~ {max_step}", flush=True)
+    # print(f"[信息] 步数范围: {min_step} ~ {max_step}", flush=True)
 
     push_channels = []
     if sckey and sckey != 'NO':
