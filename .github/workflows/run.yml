@@ -10,10 +10,11 @@ on:
         default: 'true'
   
 
-  # 每日各时段首次触发执行一次（task_state.json 去重）
+  # 高频触发窗口（每15分钟），Python 代码内 task_state 去重 + min_exec_hour 控制实际执行时间
   schedule:
-    - cron: '*/5 2-3 * * *'   # BJ 10:00-11:59
-    - cron: '*/5 11-12 * * *'  # BJ 19:00-20:59
+    - cron: '*/15 22-23 * * *'  # BJ 6:00-7:59，morning 触发窗口
+    - cron: '*/15 0-4 * * *'    # BJ 8:00-12:59，morning 触发窗口
+    - cron: '*/15 9-16 * * *'   # BJ 17:00-00:59，evening 触发窗口
 
 jobs:
   run-script:
