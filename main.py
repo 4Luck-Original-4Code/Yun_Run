@@ -32,12 +32,18 @@ class Config:
     MAX_RETRY = 3
     RETRY_DELAY = 2
 
-    # 时间段步数配置（北京时间）
+    # 自动执行时段最早执行时间（北京时间）
+    AUTO_EXEC_MIN_HOUR = {
+        'morning': 10,  # morning时段(6-12点)最早10点执行
+        'evening': 19,  # evening时段(17-24点)最早19点执行
+    }
+
+    # 时间段步数配置（北京时间，按实际小时划分）
     MANUAL_STEP_RANGES = {
-        'night': (10000, 20000),  # 北京 1-5点
-        'morning': (10000, 20000),  # 北京 6-12点
-        'afternoon': (21000, 30000),  # 北京 13-18点
-        'evening': (31000, 35000),  # 北京 19-23/0点
+        'night': (10000, 20000),     # 北京 1-5点
+        'morning': (10000, 20000),   # 北京 6-12点
+        'afternoon': (21000, 30000), # 北京 13-18点（手动触发时使用）
+        'evening': (31000, 35000),   # 北京 19-23/0点
     }
 
 
@@ -91,10 +97,10 @@ def get_current_period(hour: int = None) -> Optional[str]:
     """
     根据北京时间小时获取当前时段名称
     时段划分（北京时间）:
-    - night:   01:00-05:59
-    - morning: 06:00-12:59
-    - afternoon: 13:00-18:59
-    - evening: 19:00-00:59
+    - night:    01:00-05:59
+    - morning:  06:00-12:59
+    - evening:  17:00-00:59
+    其他时段 (13:00-16:59) 不属于任何时段，自动触发时跳过
     """
     if hour is None:
         hour = get_beijing_time().hour
@@ -103,9 +109,7 @@ def get_current_period(hour: int = None) -> Optional[str]:
         return 'night'
     elif 6 <= hour <= 12:
         return 'morning'
-    elif 13 <= hour <= 18:
-        return 'afternoon'
-    elif 19 <= hour <= 23 or hour == 0:
+    elif 17 <= hour <= 23 or hour == 0:
         return 'evening'
     return None
 
@@ -117,7 +121,7 @@ def load_task_state() -> dict:
     """
     default_state = {
         "date": get_beijing_time().strftime("%Y-%m-%d"),
-        "periods": {"night": False, "morning": False, "afternoon": False, "evening": False}
+        "periods": {"night": False, "morning": False, "evening": False}
     }
 
     if not os.path.exists(Config.TASK_STATE_FILE):
@@ -568,6 +572,30 @@ def execute_single_account(user: str, password: str, min_step: int, max_step: in
 
 def main():
     """主函数 - 直接读取环境变量"""
+    # 最早检查：自动触发时判断是否在允许的时间段
+    bj_time = get_beijing_time()
+    current_period = get_current_period(bj_time.hour)
+
+    if not is_manual_trigger():
+        # 检查1: 是否在允许的时段（仅 morning/evening）
+        if not current_period or current_period not in ('morning', 'evening'):
+            print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, 当前时段: {current_period or '非任务时段'}，跳过本次", flush=True)
+            sys.exit(0)
+
+        # 检查2: 是否达到最早执行时间（高频触发窗口内限制实际执行时刻）
+        min_exec_hour = Config.AUTO_EXEC_MIN_HOUR.get(current_period, 0)
+        if bj_time.hour < min_exec_hour:
+            print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, {current_period}时段需{min_exec_hour}点后执行，跳过本次", flush=True)
+            sys.exit(0)
+
+        # 检查3: 今天该时段是否已执行（task_state 去重）
+        task_state = load_task_state()
+        if task_state["periods"].get(current_period, False):
+            print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, {current_period}时段今日已执行，跳过本次", flush=True)
+            sys.exit(0)
+    else:
+        task_state = None
+
     print(f"\n{'=' * 60}", flush=True)
     print(f"Zepp自动刷步数程序", flush=True)
     print(f"执行时间: {format_now()} (北京时间)", flush=True)
@@ -578,30 +606,10 @@ def main():
     users = os.environ.get('ZEPP_USER', '').strip()
     passwords = os.environ.get('ZEPP_PWD', '').strip()
     sckey = os.environ.get('SCKEY', '').strip()
-    
+
     # 读取其他推送配置
     push_plus_token = os.environ.get('PUSH_PLUS_TOKEN', '').strip()
     push_wechat_webhook_key = os.environ.get('PUSH_WECHAT_WEBHOOK_KEY', '').strip()
-
-    # 获取北京时间并判断当前时段
-    bj_time = get_beijing_time()
-    bj_hour = bj_time.hour
-    current_period = get_current_period(bj_hour)
-
-    print(f"[时间] 北京时间: {bj_time.strftime('%H:%M:%S')}, 当前时段: {current_period or '非任务时段'}", flush=True)
-
-    # 仅允许 morning 和 evening 时段自动执行，其他时段跳过
-    if not is_manual_trigger() and current_period and current_period not in ('morning', 'evening'):
-        print(f"[跳过] 仅允许morning/evening时段自动执行，当前时段 '{current_period}'，跳过本次\n", flush=True)
-        sys.exit(0)
-
-    # 高频定时触发模式下，使用任务状态文件确保同一天同一时段只执行一次
-    task_state = None
-    if not is_manual_trigger() and current_period:
-        task_state = load_task_state()
-        if task_state["periods"].get(current_period, False):
-            print(f"[跳过] 时段 '{current_period}' 的任务今天已在 {task_state['date']} 执行过，跳过本次\n", flush=True)
-            sys.exit(0)
 
     print("[检查] 环境变量配置...", flush=True)
     print(f"  - USER存在: {bool(users)}", flush=True)
@@ -632,9 +640,9 @@ def main():
         print("[警告] 未设置AES_KEY，无法使用Token缓存功能", flush=True)
 
     # 计算步数范围
-    min_step, max_step = get_min_max_by_time(bj_hour, bj_time.minute)
+    min_step, max_step = get_min_max_by_time(bj_time.hour, bj_time.minute)
     print(f"[信息] 步数范围: {min_step} ~ {max_step}", flush=True)
-    
+
     push_channels = []
     if sckey and sckey != 'NO':
         push_channels.append("Server酱")
@@ -671,15 +679,15 @@ def main():
             print(f"[警告] Token保存失败: {str(e)}", flush=True)
 
     # 保存任务状态（标记当前时段已完成）
-    if task_state and current_period:
+    if task_state is not None and current_period:
         task_state["periods"][current_period] = True
         save_task_state(task_state)
 
     # 统计结果
     fail_count = sum(1 for r in exec_results if not r.get('success'))
 
-    # 晚间时段（19:00-23:59）自动推送通知（手动触发不推送）
-    if not is_manual_trigger() and current_period == 'evening' and 19 <= bj_hour <= 23 and push_channels and push_config:
+    # 晚间时段自动推送通知（手动触发和morning时段不推送）
+    if not is_manual_trigger() and current_period == 'evening' and push_channels and push_config:
         push_util.push_results(exec_results, push_config, force_push=True)
 
     sys.exit(0 if fail_count == 0 else 1)
