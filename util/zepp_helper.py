@@ -1,5 +1,4 @@
 import re
-import time
 import traceback
 import urllib.parse
 import uuid
@@ -225,7 +224,7 @@ def check_app_token(app_token, userid=None) -> Tuple[bool, Optional[str]]:
 def update_step(app_token, userid, step, ip):
     t = get_time()
 
-    today = time.strftime("%F")
+    today = get_beijing_time().strftime("%F")
 
     data_json = DATA_JSON
 
