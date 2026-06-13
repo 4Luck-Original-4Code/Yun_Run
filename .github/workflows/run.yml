@@ -10,7 +10,7 @@ on:
         default: 'true'
   
 
-  # 高频触发窗口（每15分钟），Python 代码内 task_state 去重 + min_exec_hour 控制实际执行时间
+  # 高频触发窗口（每15分钟）
   schedule:
     - cron: '*/15 22-23 * * *'  # BJ 6:00-7:59，morning 触发窗口
     - cron: '*/15 0-4 * * *'    # BJ 8:00-12:59，morning 触发窗口
