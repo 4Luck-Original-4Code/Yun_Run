@@ -4,20 +4,21 @@ Zepp自动刷步数主程序
 Token缓存、自动推送、错误重试
 直接读取环境变量
 """
-import traceback
-from datetime import datetime
-import pytz
-import uuid
 import json
-import random
-import time
 import os
+import random
 import sys
-from typing import Optional, Tuple, Dict, List
+import time
+import traceback
+import uuid
+from datetime import datetime
+from typing import Optional, Tuple, Dict, Any, cast
 
-from util.aes_help import encrypt_data, decrypt_data, get_aes_key
-import util.zepp_helper as zepphelper
+import pytz
+
 import util.push_util as push_util
+import util.zepp_helper as zepphelper
+from util.aes_help import encrypt_data, decrypt_data, get_aes_key
 
 
 # ==================== 全局配置 ====================
@@ -28,7 +29,6 @@ class Config:
     TASK_STATE_FILE = "task_state.json"
     DEFAULT_MIN_STEP = 10000
     DEFAULT_MAX_STEP = 35000
-    REQUEST_TIMEOUT = 30
     MAX_RETRY = 3
     RETRY_DELAY = 2
 
@@ -114,14 +114,14 @@ def get_current_period(hour: int = None) -> Optional[str]:
     return None
 
 
-def load_task_state() -> dict:
+def load_task_state() -> Dict[str, Any]:
     """
     加载任务状态文件，用于高频触发时同一天同一时段只执行一次
-    文件结构: {"date": "2026-06-11", "periods": {"night": bool, "morning": bool, ...}}
+    文件结构: {"date": "2026-06-11", "periods": {"morning": bool, "evening": bool}}
     """
     default_state = {
         "date": get_beijing_time().strftime("%Y-%m-%d"),
-        "periods": {"night": False, "morning": False, "evening": False}
+        "periods": {"morning": False, "evening": False}
     }
 
     if not os.path.exists(Config.TASK_STATE_FILE):
@@ -142,7 +142,7 @@ def load_task_state() -> dict:
         return default_state
 
 
-def save_task_state(state: dict):
+def save_task_state(state: Dict[str, Any]):
     """保存任务状态到文件"""
     try:
         state["date"] = get_beijing_time().strftime("%Y-%m-%d")
@@ -186,7 +186,7 @@ def get_min_max_by_time(hour: int = None, minute: int = None) -> Tuple[int, int]
 
 # ==================== Token管理 ====================
 
-def prepare_user_tokens(aes_key: bytes = None) -> Dict:
+def prepare_user_tokens(aes_key: bytes = None) -> Dict[str, Any]:
     """从加密文件加载Token缓存"""
     if not os.path.exists(Config.TOKEN_FILE):
         print(f"[信息] Token缓存文件不存在，将创建新文件")
@@ -224,7 +224,7 @@ def prepare_user_tokens(aes_key: bytes = None) -> Dict:
         return {}
 
 
-def persist_user_tokens(user_tokens: Dict, aes_key: bytes = None) -> bool:
+def persist_user_tokens(user_tokens: Dict[str, Any], aes_key: bytes = None) -> bool:
     """
     保存Token到加密文件
     :param aes_key: AES密钥，如果为None则从环境变量获取
@@ -253,7 +253,7 @@ def persist_user_tokens(user_tokens: Dict, aes_key: bytes = None) -> bool:
 class ZeppStepRunner:
     """Zepp刷步数执行器"""
 
-    def __init__(self, user: str, password: str, user_tokens: Dict):
+    def __init__(self, user: str, password: str, user_tokens: Dict[str, Any]):
         self.user_id = None
         self.device_id = str(uuid.uuid4())
         self.invalid = False
@@ -261,7 +261,6 @@ class ZeppStepRunner:
         self.user_tokens = user_tokens
         self.error = None
         self.actual_step = 0
-        self.login_failure_count = 0
 
         # 参数校验
         user = str(user).strip()
@@ -352,19 +351,42 @@ class ZeppStepRunner:
                 self.log_str += f"[警告] access_token刷新异常: {str(e)}\n"
 
             self.log_str += f"[警告] access_token无效，重新登录...\n"
+            app_token = self._full_login_process(0)
+            if not app_token:
+                self.invalid = True
+                return None
+            return app_token
+
+        # 无缓存Token，执行完整登录
+        self.log_str += f"[信息] 用户无缓存Token，执行完整登录流程\n"
+        app_token = self._full_login_process(0)
+        if not app_token:
+            self.invalid = True
+            return None
+        return app_token
+
+    def _full_login_process(self, retry_count=0) -> Optional[str]:
+        """完整的登录流程，不使用缓存"""
+        self.log_str += f"[登录] 开始第{retry_count}次重新登录流程，重新获取密钥并清空缓存\n"
+
+        self.log_str += f"[密钥] 重新获取AES密钥完成\n"
+
+        if self.user in self.user_tokens:
+            del self.user_tokens[self.user]
+            self.log_str += f"[缓存] 已清除用户 {self.user} 的旧缓存\n"
+        else:
+            self.log_str += f"[缓存] 用户 {self.user} 无旧缓存\n"
 
         try:
             access_token, msg = zepphelper.login_access_token(self.user, self._password)
             if not access_token:
                 self.log_str += f"[失败] 获取access_token失败: {msg}\n"
                 self.error = f"登录失败: {msg}"
-                self.invalid = True
                 return None
-            self.log_str += "[成功] 重新登录获取access_token\n"
+            self.log_str += "[成功] 获取access_token\n"
         except Exception as e:
             self.log_str += f"[异常] 登录异常: {str(e)}\n"
             self.error = f"登录异常: {str(e)}"
-            self.invalid = True
             return None
 
         try:
@@ -373,7 +395,6 @@ class ZeppStepRunner:
             if not login_token:
                 self.log_str += f"[失败] 获取login_token失败: {msg}\n"
                 self.error = f"获取login_token失败: {msg}"
-                self.invalid = True
                 return None
 
             self.user_id = user_id
@@ -392,55 +413,6 @@ class ZeppStepRunner:
         except Exception as e:
             self.log_str += f"[异常] 获取Token异常: {str(e)}\n"
             self.error = f"获取Token异常: {str(e)}"
-            self.invalid = True
-            return None
-
-    def _full_login_process(self, retry_count=0) -> Optional[str]:
-        """完整的登录流程，不使用缓存"""
-        self.log_str += f"[登录] 开始第{retry_count}次重新登录流程，重新获取密钥并清空缓存\n"
-
-        from util.aes_help import get_aes_key
-        new_aes_key = get_aes_key()
-        self.log_str += f"[密钥] 重新获取AES密钥完成\n"
-
-        if self.user in self.user_tokens:
-            del self.user_tokens[self.user]
-            self.log_str += f"[缓存] 已清除用户 {self.user} 的旧缓存\n"
-        else:
-            self.log_str += f"[缓存] 用户 {self.user} 无旧缓存\n"
-
-        try:
-            access_token, msg = zepphelper.login_access_token(self.user, self._password)
-            if not access_token:
-                self.log_str += f"[失败] 获取access_token失败: {msg}\n"
-                return None
-            self.log_str += "[成功] 获取access_token\n"
-        except Exception as e:
-            self.log_str += f"[异常] 登录异常: {str(e)}\n"
-            return None
-
-        try:
-            login_token, app_token, user_id, msg = zepphelper.grant_login_tokens(access_token, self.device_id,
-                                                                                 self.is_phone)
-            if not login_token:
-                self.log_str += f"[失败] 获取login_token失败: {msg}\n"
-                return None
-
-            self.user_id = user_id
-            self.user_tokens[self.user] = {
-                "access_token": access_token,
-                "access_token_time": get_timestamp(),
-                "login_token": login_token,
-                "login_token_time": get_timestamp(),
-                "app_token": app_token,
-                "app_token_time": get_timestamp(),
-                "user_id": user_id,
-                "device_id": self.device_id
-            }
-            self.log_str += "[成功] 登录成功，获取所有Token\n"
-            return app_token
-        except Exception as e:
-            self.log_str += f"[异常] 获取Token异常: {str(e)}\n"
             return None
 
     def _clean_password(self):
@@ -470,14 +442,12 @@ class ZeppStepRunner:
                     app_token = self._full_login_process(retry_count=attempt)
 
                 if not app_token:
-                    self.login_failure_count += 1
                     if attempt < Config.MAX_RETRY - 1:
                         self.log_str += f"[重试] {Config.RETRY_DELAY}秒后进行第{attempt + 1}次登录重试...\n"
                         time.sleep(Config.RETRY_DELAY)
                     else:
                         return f"[失败] 连续{Config.MAX_RETRY}次登录尝试均失败", False
                 else:
-                    self.login_failure_count = 0
                     break
 
             if not app_token:
@@ -488,6 +458,7 @@ class ZeppStepRunner:
 
             update_success = False
             update_msg = ""
+            last_error_msg = ""
 
             for attempt in range(Config.MAX_RETRY):
                 try:
@@ -497,6 +468,7 @@ class ZeppStepRunner:
                         update_msg = msg
                         break
 
+                    last_error_msg = msg
                     self.log_str += f"[失败] 第{attempt + 1}次尝试: {msg}\n"
 
                     if msg and any(k in msg.lower() for k in ['token', 'auth', '未授权', '登录', '失效']):
@@ -508,6 +480,7 @@ class ZeppStepRunner:
                         continue
 
                 except Exception as e:
+                    last_error_msg = str(e)
                     self.log_str += f"[异常] 第{attempt + 1}次尝试异常: {str(e)}\n"
 
                 if attempt < Config.MAX_RETRY - 1:
@@ -518,7 +491,8 @@ class ZeppStepRunner:
             if update_success:
                 return f"[成功] {update_msg} | 步数: {step}", True
             else:
-                return "[失败] 达到最大重试次数，步数更新未成功", False
+                fail_reason = last_error_msg if last_error_msg else "达到最大重试次数，步数更新未成功"
+                return f"[失败] {fail_reason}", False
         finally:
             self._clean_password()
 
@@ -526,7 +500,7 @@ class ZeppStepRunner:
 # ==================== 主执行函数 ====================
 
 def run_single_account(user: str, password: str,
-                       min_step: int, max_step: int, user_tokens: Dict) -> Dict:
+                       min_step: int, max_step: int, user_tokens: Dict[str, Any]) -> Dict[str, Any]:
     """执行单个账号的刷步数任务"""
     log_str = f"\n{'=' * 60}\n"
     log_str += f"[时间] {format_now()}\n"
@@ -561,13 +535,6 @@ def run_single_account(user: str, password: str,
     return exec_result
 
 
-def execute_single_account(user: str, password: str, min_step: int, max_step: int,
-                           user_tokens: Dict) -> List[Dict]:
-    """执行单个账号的刷步数任务"""
-    result = run_single_account(user, password, min_step, max_step, user_tokens)
-    return [result]
-
-
 # ==================== 主入口 ====================
 
 def main():
@@ -575,6 +542,7 @@ def main():
     # 最早检查：自动触发时判断是否在允许的时间段
     bj_time = get_beijing_time()
     current_period = get_current_period(bj_time.hour)
+    task_state = None
 
     if not is_manual_trigger():
         # 检查1: 是否在允许的时段（仅 morning/evening）
@@ -593,8 +561,6 @@ def main():
         if task_state["periods"].get(current_period, False):
             print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, {current_period}时段今日已执行，跳过本次", flush=True)
             sys.exit(0)
-    else:
-        task_state = None
 
     print(f"\n{'=' * 60}", flush=True)
     print(f"Zepp自动刷步数程序", flush=True)
@@ -641,7 +607,6 @@ def main():
 
     # 计算步数范围
     min_step, max_step = get_min_max_by_time(bj_time.hour, bj_time.minute)
-    # print(f"[信息] 步数范围: {min_step} ~ {max_step}", flush=True)
 
     push_channels = []
     if sckey and sckey != 'NO':
@@ -662,10 +627,11 @@ def main():
 
     # 执行刷步任务
     try:
-        exec_results = execute_single_account(
+        result = run_single_account(
             users, passwords, min_step, max_step,
             user_tokens
         )
+        exec_results = [result]
     except Exception as e:
         print(f"\n[错误] 执行过程中发生异常: {str(e)}", flush=True)
         traceback.print_exc()
@@ -679,9 +645,10 @@ def main():
             print(f"[警告] Token保存失败: {str(e)}", flush=True)
 
     # 保存任务状态（标记当前时段已完成）
-    if task_state is not None and current_period:
-        task_state["periods"][current_period] = True
-        save_task_state(task_state)
+    if isinstance(current_period, str) and task_state is not None:
+        state = cast(Dict[str, Any], task_state)
+        state["periods"][current_period] = True
+        save_task_state(state)
 
     # 统计结果
     fail_count = sum(1 for r in exec_results if not r.get('success'))
