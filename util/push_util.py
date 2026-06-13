@@ -3,10 +3,10 @@
 推送工具模块
 支持多种推送方式：Server酱、PushPlus、企业微信 Webhook
 """
-import json
-import requests
 from datetime import datetime
+
 import pytz
+import requests
 
 
 def get_beijing_time():
@@ -26,11 +26,9 @@ class PushConfig:
     def __init__(self,
                  sckey=None,
                  push_plus_token=None,
-                 push_plus_max=30,
                  push_wechat_webhook_key=None):
         self.sckey = sckey
         self.push_plus_token = push_plus_token
-        self.push_plus_max = int(push_plus_max) if push_plus_max else 30
         self.push_wechat_webhook_key = push_wechat_webhook_key
 
 
@@ -183,15 +181,9 @@ def push_to_server_chan(exec_results, config: PushConfig):
         print("[推送] Server酱未配置，跳过")
         return
 
-    # 简化推送内容：仅显示时间、状态和步数
-    all_success = all(r.get('success', False) for r in exec_results)
-    total_step = sum(r.get('step', 0) for r in exec_results if r.get('success'))
-    fail_count = sum(1 for r in exec_results if not r.get('success'))
-
-    if all_success:
-        body = f"{format_now_bj()}，成功SUCCESS 步数：{total_step}"
-    else:
-        body = f"{format_now_bj()}，成功：{len(exec_results) - fail_count}，失败：{fail_count}，步数：{total_step}"
+    # 使用 exec_result 中的 msg 作为推送内容
+    detail_msgs = [r.get('msg', '') for r in exec_results if r.get('msg')]
+    body = f"{format_now_bj()}，{detail_msgs[0]}" if detail_msgs else f"{format_now_bj()}，无执行结果"
 
     title = "刷步通知"
     print(f"[推送] 发送Server酱...")
@@ -204,15 +196,10 @@ def push_to_push_plus(exec_results, config: PushConfig):
         print("[推送] PushPlus未配置，跳过")
         return
 
-    # 简化推送内容：仅显示时间、状态和步数
-    all_success = all(r.get('success', False) for r in exec_results)
-    total_step = sum(r.get('step', 0) for r in exec_results if r.get('success'))
-    fail_count = sum(1 for r in exec_results if not r.get('success'))
-
-    if all_success:
-        html = f'<div>{format_now_bj()}，成功SUCCESS 步数：{total_step}</div>'
-    else:
-        html = f'<div>{format_now_bj()}，成功：{len(exec_results) - fail_count}，失败：{fail_count}，步数：{total_step}</div>'
+    # 使用 exec_result 中的 msg 作为推送内容
+    detail_msgs = [r.get('msg', '') for r in exec_results if r.get('msg')]
+    content = f"{format_now_bj()}，{detail_msgs[0]}" if detail_msgs else f"{format_now_bj()}，无执行结果"
+    html = f'<div>{content}</div>'
 
     title = f"{format_now_bj()} 刷步通知"
     print(f"[推送] 发送PushPlus...")
@@ -225,15 +212,12 @@ def push_to_wechat_webhook(exec_results, config: PushConfig):
         print("[推送] 企业微信未配置，跳过")
         return
 
-    # 简化推送内容：仅显示时间、状态和步数
-    all_success = all(r.get('success', False) for r in exec_results)
-    total_step = sum(r.get('step', 0) for r in exec_results if r.get('success'))
-    fail_count = sum(1 for r in exec_results if not r.get('success'))
-
-    if all_success:
-        content = f'## {format_now_bj()}，成功SUCCESS 步数：{total_step}'
+    # 使用 exec_result 中的 msg 作为推送内容
+    detail_msgs = [r.get('msg', '') for r in exec_results if r.get('msg')]
+    if detail_msgs:
+        content = '## ' + '\n'.join(detail_msgs)
     else:
-        content = f'## {format_now_bj()}，成功：{len(exec_results) - fail_count}，失败：{fail_count}，步数：{total_step}'
+        content = f"## {format_now_bj()}，无执行结果"
 
     title = f"{format_now_bj()} 刷步通知"
     print(f"[推送] 发送企业微信...")
