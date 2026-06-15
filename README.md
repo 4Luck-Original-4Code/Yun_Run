@@ -22,7 +22,7 @@
      - `AES_KEY`：16 字节的 AES 加密密钥（自定义，例如 `xeNtBVqzDc6tuNTh`）。
    - 添加以下 Secrets（可选，用于推送通知）：
      - `SCKEY`：Server酱推送密钥（关注wx服务号`方糖`获取）。
-     - `PUSH_PLUS_TOKEN`：PushPlus 推送 token（访问 http://www.pushplus.plus 注册获取）。
+     - `PUSH_PLUS_TOKEN`：PushPlus 推送 token，注册地址[pushplus](https://www.pushplus.plus/push1.html)。
      - `PUSH_WECHAT_WEBHOOK_KEY`：企业微信推送通知的key，假设webhook是：https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=693a91f6-7xxx-4bc4-97a0-0ec2sifa5aaa，请复制key=后面的内容 `693a91f6-7xxx-4bc4-97a0-0ec2sifa5aaa` 。
 3. **启用 Actions**：仓库 Settings > Actions > General > Workflow permissions > Read and write permissions > Save。
 4. **运行 Workflow**：
