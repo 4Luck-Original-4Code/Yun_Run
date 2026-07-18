@@ -32,10 +32,11 @@ class Config:
     MAX_RETRY = 3
     RETRY_DELAY = 2
 
-    # 自动执行时段最早执行时间（北京时间）
-    AUTO_EXEC_MIN_HOUR = {
-        'morning': 9,  # morning时段(6-12点)最早9点执行
-        'evening': 19,  # evening时段(17-24点)最早19点执行
+    # 自动执行时段允许的小时列表（北京时间）
+    # morning: 9点和10点二选一，evening: 19点和20点二选一
+    AUTO_EXEC_HOURS = {
+        'morning': {9, 10},   # 9点优先，9点未触发则10点补上
+        'evening': {19, 20},  # 19点优先，19点未触发则20点补上
     }
 
     # 时间段步数配置（按实际小时划分）
@@ -116,12 +117,13 @@ def get_current_period(hour: int = None) -> Optional[str]:
 
 def load_task_state() -> Dict[str, Any]:
     """
-    加载任务状态文件，用于高频触发时同一天同一时段只执行一次
-    文件结构: {"date": "2026-06-11", "periods": {"morning": bool, "evening": bool}}
+    加载任务状态文件，用于高频触发时同一天同一时段组只执行一次
+    时段组: morning_group(9点/10点二选一), evening_group(19点/20点二选一)
+    文件结构: {"date": "2026-06-11", "periods": {"morning_group": bool, "evening_group": bool}}
     """
     default_state = {
         "date": get_beijing_time().strftime("%Y-%m-%d"),
-        "periods": {"morning": False, "evening": False}
+        "periods": {"morning_group": False, "evening_group": False}
     }
 
     if not os.path.exists(Config.TASK_STATE_FILE):
@@ -550,16 +552,18 @@ def main():
             print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, 当前时段: {current_period or '非任务时段'}，跳过本次", flush=True)
             sys.exit(0)
 
-        # 检查2: 是否达到最早执行时间（高频触发窗口内限制实际执行时刻）
-        min_exec_hour = Config.AUTO_EXEC_MIN_HOUR.get(current_period, 0)
-        if bj_time.hour < min_exec_hour:
-            print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, {current_period}时段需{min_exec_hour}点后执行，跳过本次", flush=True)
+        # 检查2: 当前小时是否在该时段的允许执行窗口内
+        # morning: 9点或10点, evening: 19点或20点
+        allowed_hours = Config.AUTO_EXEC_HOURS.get(current_period, set())
+        if bj_time.hour not in allowed_hours:
+            print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, {current_period}时段允许执行时间: {sorted(allowed_hours)}点, 当前{bj_time.hour}点不在窗口内，跳过本次", flush=True)
             sys.exit(0)
 
-        # 检查3: 今天该时段是否已执行（task_state 去重）
+        # 检查3: 今天该时段组是否已执行（时段组去重：9/10二选一, 19/20二选一）
         task_state = load_task_state()
-        if task_state["periods"].get(current_period, False):
-            print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, {current_period}时段今日已执行，跳过本次", flush=True)
+        group_key = f"{current_period}_group"
+        if task_state["periods"].get(group_key, False):
+            print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, {current_period}时段组({group_key})今日已执行，跳过本次", flush=True)
             sys.exit(0)
 
     print(f"\n{'=' * 60}", flush=True)
@@ -644,10 +648,11 @@ def main():
         except Exception as e:
             print(f"[警告] Token保存失败: {str(e)}", flush=True)
 
-    # 保存任务状态（标记当前时段已完成）
+    # 保存任务状态（标记当前时段组已完成，同组内后续小时不再执行）
     if isinstance(current_period, str) and task_state is not None:
+        group_key = f"{current_period}_group"
         state = cast(Dict[str, Any], task_state)
-        state["periods"][current_period] = True
+        state["periods"][group_key] = True
         save_task_state(state)
 
     # 统计结果
