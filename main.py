@@ -34,11 +34,11 @@ class Config:
 
     # 自动执行时段最早执行时间（北京时间）
     AUTO_EXEC_MIN_HOUR = {
-        'morning': 10,  # morning时段(6-12点)最早10点执行
+        'morning': 9,  # morning时段(6-12点)最早9点执行
         'evening': 19,  # evening时段(17-24点)最早19点执行
     }
 
-    # 时间段步数配置（北京时间，按实际小时划分）
+    # 时间段步数配置（按实际小时划分）
     MANUAL_STEP_RANGES = {
         'night': (10000, 20000),     # 北京 1-5点
         'morning': (10000, 20000),   # 北京 6-12点
