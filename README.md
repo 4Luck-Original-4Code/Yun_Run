@@ -23,7 +23,8 @@
    - 添加以下 Secrets（可选，用于推送通知）：
      - `SCKEY`：Server酱推送密钥（关注wx服务号`方糖`获取）。
      - `PUSH_PLUS_TOKEN`：PushPlus 推送 token，注册地址[pushplus](https://www.pushplus.plus/push1.html)。
-     - `PUSH_WECHAT_WEBHOOK_KEY`：企业微信推送通知的key，假设webhook是：https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=693a91f6-7xxx-4bc4-97a0-0ec2sifa5aaa，请复制key=后面的内容 `693a91f6-7xxx-4bc4-97a0-0ec2sifa5aaa` 。
+     - `PUSH_WECHAT_WEBHOOK_KEY`：企业微信推送通知的key（企业微信建个内部群（只勾自己也能建）进群点右上角 …→ 消息推送​ → 添加​ → 自定义消息推送（老版本叫"群机器人→新建机器人"）
+填名称 → 复制 Webhook 地址​ → 保存），假设webhook是：https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=693a91f6-7xxx-4bc4-97a0-0ec2sifa5aaa 请复制key=后面的内容: `693a91f6-7xxx-4bc4-97a0-0ec2sifa5aaa` 。
 3. **启用 Actions**：仓库 Settings > Actions > General > Workflow permissions > Read and write permissions > Save。
 4. **运行 Workflow**：
    - 手动触发：Actions > 刷步数 > Run workflow。
