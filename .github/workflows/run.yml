@@ -10,10 +10,11 @@ on:
         default: 'true'
   
 
-  # 高频触发窗口（每10分钟，UTC时间）
+  # 高频触发窗口（每15分钟，UTC时间）
+  # 放宽带宽覆盖平台派发延迟：morning=北京8-12点，evening=北京18-22点
   schedule:
-    - cron: '*/10 1-2 * * *'    # BJ 9:00-10:59，morning 触发窗口（9点/10点二选一）
-    - cron: '*/10 11-12 * * *'  # BJ 19:00-20:59，evening 触发窗口（19点/20点二选一）
+    - cron: '*/15 0-4 * * *'    # BJ 8:00-12:59，morning 触发窗口
+    - cron: '*/15 10-14 * * *'  # BJ 18:00-22:59，evening 触发窗口
 
 # 串行执行，避免并发运行争抢任务状态与Token缓存
 concurrency:
@@ -44,9 +45,12 @@ jobs:
         echo "[信息] 平台时间: $(date -u '+%F %T') UTC"
         echo "[信息] 北京时间: $BJ_TIME (hour=$BJ_HOUR)"
 
-        # 允许窗口（北京时间）: 9点、10点、19点、20点
-        if [ "$BJ_HOUR" -eq 9 ] || [ "$BJ_HOUR" -eq 10 ] || [ "$BJ_HOUR" -eq 19 ] || [ "$BJ_HOUR" -eq 20 ]; then
-          echo "[放行] 当前处于执行窗口（北京 9/10/19/20 点），允许执行主任务"
+        # 允许窗口（北京时间）: 早上8-12点，晚上18-22点（放宽以覆盖平台派发延迟冗余）
+        if [ "$BJ_HOUR" -ge 8 ] && [ "$BJ_HOUR" -le 12 ]; then
+          echo "[放行] 当前处于执行窗口（北京 8-12 点），允许执行主任务"
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+        elif [ "$BJ_HOUR" -ge 18 ] && [ "$BJ_HOUR" -le 22 ]; then
+          echo "[放行] 当前处于执行窗口（北京 18-22 点），允许执行主任务"
           echo "should_run=true" >> "$GITHUB_OUTPUT"
         else
           echo "[跳过] 不在执行窗口内，本次触发到此为止"
