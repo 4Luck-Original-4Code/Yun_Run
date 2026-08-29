@@ -1,20 +1,13 @@
 name: 刷步数
 
 on:
-  # 支持手动触发
+  # 支持手动触发，也支持 cron-job.org 外部定时触发（source=cron）
   workflow_dispatch:
     inputs:
-      manual_trigger:
-        description: '手动触发执行'
+      source:
+        description: '触发来源（cron-job 定时触发填 cron）'
         required: false
-        default: 'true'
-  
-
-  # 高频触发窗口（每15分钟，UTC时间）
-  # 放宽带宽覆盖平台派发延迟：morning=北京8-12点，evening=北京18-22点
-  schedule:
-    - cron: '*/15 0-4 * * *'    # BJ 8:00-12:59，morning 触发窗口
-    - cron: '*/15 10-14 * * *'  # BJ 18:00-22:59，evening 触发窗口
+        default: 'manual'
 
 # 串行执行，避免并发运行争抢任务状态与Token缓存
 concurrency:
@@ -22,45 +15,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # 轻量守门任务：不检出代码、不安装依赖，纯 bash 判断北京时间，约10秒结束
-  # 作用：平台cron触发时间不准时，由这里按北京时间精确放行，
-  #       窗口外的触发不会走到主任务（省去 checkout + pip install 的分钟数消耗）
-  time-gate:
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.check.outputs.should_run }}
-    steps:
-    - name: 北京时间窗口检查
-      id: check
-      run: |
-        # 手动触发直接放行
-        if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-          echo "[放行] 手动触发，跳过时间窗口检查"
-          echo "should_run=true" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-
-        BJ_TIME=$(TZ=Asia/Shanghai date '+%F %T')
-        BJ_HOUR=$((10#$(TZ=Asia/Shanghai date +%H)))
-        echo "[信息] 平台时间: $(date -u '+%F %T') UTC"
-        echo "[信息] 北京时间: $BJ_TIME (hour=$BJ_HOUR)"
-
-        # 允许窗口（北京时间）: 早上8-12点，晚上18-22点（放宽以覆盖平台派发延迟冗余）
-        if [ "$BJ_HOUR" -ge 8 ] && [ "$BJ_HOUR" -le 12 ]; then
-          echo "[放行] 当前处于执行窗口（北京 8-12 点），允许执行主任务"
-          echo "should_run=true" >> "$GITHUB_OUTPUT"
-        elif [ "$BJ_HOUR" -ge 18 ] && [ "$BJ_HOUR" -le 22 ]; then
-          echo "[放行] 当前处于执行窗口（北京 18-22 点），允许执行主任务"
-          echo "should_run=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "[跳过] 不在执行窗口内，本次触发到此为止"
-          echo "should_run=false" >> "$GITHUB_OUTPUT"
-        fi
-
+  # 由 cron-job.org 在目标时间点通过 workflow_dispatch 触发，
   run-script:
-    # 仅当守门任务放行时才执行
-    needs: time-gate
-    if: needs.time-gate.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -132,6 +88,7 @@ jobs:
         SCKEY: ${{ secrets.SCKEY }}                            # Server酱推送密钥（可选）
         PUSH_PLUS_TOKEN: ${{ secrets.PUSH_PLUS_TOKEN }}        # PushPlus推送token（可选）
         PUSH_WECHAT_WEBHOOK_KEY: ${{ secrets.PUSH_WECHAT_WEBHOOK_KEY }}  # 企业微信Webhook Key（可选）
+        TRIGGER_SOURCE: ${{ github.event.inputs.source }}      # 触发来源（cron/手动）
       run: |
         python main.py
         
