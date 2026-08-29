@@ -61,7 +61,7 @@ GitHub 自带的 `schedule` 派发时刻不可靠，推荐用 **cron-job.org** �
 
 1. GitHub → 头像 → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token。
 2. 配置：Token name:自定义，Resource owner:自己的账号(默认)，Repository access 选 **Only select repositories** -点击Select repositories选择本仓库；Permissions → Repository permissions → **Actions** → **Read and write**；Expiration 建议设 90 天。
-3. 点 **Generate token**，立即复制那串 `github_pat_...`（只显示一次）。
+3. 点 **Generate token**，立即复制那串 `github_pat_...`（只显示一次，遗忘只能新建）。
 
 **2. 在 cron-job.org 新建任务**
 
