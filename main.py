@@ -33,11 +33,11 @@ class Config:
     RETRY_DELAY = 2
 
     # 自动执行时段允许的小时列表（北京时间）
-    # gate 已放宽到 8-12 / 18-22 保证平台延迟派发能进入主流程，
-    # 这里只保留精确目标点才真正刷步：morning 9/10 二选一，evening 19/20 二选一
+    # 由 cron-job.org 准点触发：早上 10:00、晚上 19:30
+    # 各保留 1 小时冗余以容忍 GitHub 排队延迟，task_state 保证每天各只真刷一次
     AUTO_EXEC_HOURS = {
-        'morning': {9, 10},   # 9点优先，9点未触发则10点补上
-        'evening': {19, 20},  # 19点优先，19点未触发则20点补上
+        'morning': {10, 11},   # 10点为主（10:00 触发），延迟到 11 点也能补上
+        'evening': {19, 20},   # 19点为主（19:30 触发），延迟到 20 点也能补上
     }
 
     # 时间段步数配置（按实际小时划分）
@@ -91,8 +91,14 @@ def desensitize_user_name(user: str) -> str:
 
 
 def is_manual_trigger() -> bool:
-    """判断是否为手动触发"""
-    return os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch'
+    """
+    判断是否为真正的手动/网页触发。
+    cron-job 外部定时触发（source=cron 的 workflow_dispatch）不算手动，
+    仍照常走时段校验与 task_state 每日去重。
+    """
+    if os.environ.get('GITHUB_EVENT_NAME') != 'workflow_dispatch':
+        return False
+    return os.environ.get('TRIGGER_SOURCE', '') != 'cron'
 
 
 def get_current_period(hour: int = None) -> Optional[str]:
@@ -119,7 +125,7 @@ def get_current_period(hour: int = None) -> Optional[str]:
 def load_task_state() -> Dict[str, Any]:
     """
     加载任务状态文件，用于高频触发时同一天同一时段组只执行一次
-    时段组: morning_group(9点/10点二选一), evening_group(19点/20点二选一)
+    时段组: morning_group(10点一次), evening_group(19:30一次)
     文件结构: {"date": "2026-06-11", "periods": {"morning_group": bool, "evening_group": bool}}
     """
     default_state = {
