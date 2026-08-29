@@ -19,7 +19,7 @@
         │  调用 GitHub API 触发 workflow_dispatch
         │  请求体: {"ref":"main","inputs":{"source":"cron"}}
         ▼
-[GitHub Actions run.yml]  run-script（唯一主任务，无 time-gate / schedule）
+[GitHub Actions run.yml]  run-script
         │  把 source=cron 传给 main.py
         ▼
 [main.py]
