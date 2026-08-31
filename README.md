@@ -55,7 +55,7 @@
 
 ## 配置外部定时触发（cron-job.org，推荐）
 
-GitHub 自带的 `schedule` 派发时刻不可靠，推荐用 **cron-job.org** 精确触发 `workflow_dispatch`。
+GitHub 自带的 `schedule` 派发时刻不可靠，推荐用免费的 **cron-job.org** 精确触发 `workflow_dispatch`。
 
 **1. 生成最小权限 GitHub Token**
 
