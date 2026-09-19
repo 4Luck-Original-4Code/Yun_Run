@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Zepp自动刷步数主程序
-Token缓存、自动推送、错误重试
-直接读取环境变量
+Zepp 自动刷步数主程序
+
+三级 Token 缓存登录；定时触发经“时段校验 + 每日去重”，早晚各只刷成功一次；
+失败不写去重状态，由后续触发点自动重跑；账号在日志/推送中脱敏。配置全来自环境变量。
 """
 import json
 import os
@@ -30,14 +31,14 @@ class Config:
     DEFAULT_MIN_STEP = 10000
     DEFAULT_MAX_STEP = 35000
     MAX_RETRY = 3
+    STEP_MAX_RETRY = 5   # 步数提交重试次数（缓解跨境网络抖动）
     RETRY_DELAY = 2
 
-    # 自动执行时段允许的小时列表（北京时间）
-    # 由 cron-job.org 准点触发：早上 10:00、晚上 19:30
-    # 各保留 1 小时冗余以容忍 GitHub 排队延迟，task_state 保证每天各只真刷一次
+    # 允许自动刷步的钟点（北京时间）。cron 触发：早 10:00~10:20 每5分钟 + 11:00 保底，晚 19:00~19:20 每5分钟 + 20:00 保底
+    # 早晚各多留 1 小时容忍 GitHub 排队；task_state 保证每天各只刷成功一次
     AUTO_EXEC_HOURS = {
-        'morning': {10, 11},   # 10点为主（10:00 触发），延迟到 11 点也能补上
-        'evening': {19, 20},   # 19点为主（19:30 触发），延迟到 20 点也能补上
+        'morning': {10, 11},   # 早：10 点主刷，11 点保底
+        'evening': {19, 20},   # 晚：19 点主刷，20 点保底
     }
 
     # 时间段步数配置（按实际小时划分）
@@ -81,13 +82,13 @@ def fake_ip() -> str:
 
 
 def desensitize_user_name(user: str) -> str:
-    """账号脱敏显示"""
+    """账号脱敏显示：保留前 2 位，其余用 * 替换（如 13812345678 -> 13*********）"""
     if not user:
         return "None"
     length = len(user)
     if length < 3:
         return "请配置正确的手机号或者邮箱"
-    return "*" * (length - 2) + user[-2:]
+    return user[:2] + "*" * (length - 2)
 
 
 def is_manual_trigger() -> bool:
@@ -125,7 +126,7 @@ def get_current_period(hour: int = None) -> Optional[str]:
 def load_task_state() -> Dict[str, Any]:
     """
     加载任务状态文件，用于高频触发时同一天同一时段组只执行一次
-    时段组: morning_group(10点一次), evening_group(19:30一次)
+    时段组: morning_group(早窗只成功一次), evening_group(晚窗只成功一次)
     文件结构: {"date": "2026-06-11", "periods": {"morning_group": bool, "evening_group": bool}}
     """
     default_state = {
@@ -164,32 +165,26 @@ def save_task_state(state: Dict[str, Any]):
 def get_min_max_by_time(hour: int = None, minute: int = None) -> Tuple[int, int]:
     """
     根据当前北京时间智能计算步数范围
-    时段划分（北京时间）:
-    - 01:00-05:00 (night时段): 10000-20000
-    - 06:00-12:00 (morning时段): 10000-20000
-    - 13:00-18:00 (afternoon时段): 21000-30000
-    - 19:00-24:00 (evening时段): 31000-35000
+    时段划分（北京时间，按小时闭合区间）:
+    - 01:00-05:59 (night):     10000-20000
+    - 06:00-12:59 (morning):   10000-20000
+    - 13:00-18:59 (afternoon): 21000-30000（自动触发不覆盖，仅手动生效）
+    - 19:00-00:59 (evening):   31000-35000
     """
     if hour is None:
         hour = get_beijing_time().hour
     if minute is None:
         minute = get_beijing_time().minute
 
-    # 根据北京时间段选择步数范围
     if 1 <= hour <= 5:
-        # 北京 1-5点 (night)
         return Config.MANUAL_STEP_RANGES['night']
     elif 6 <= hour <= 12:
-        # 北京 6-12点 (morning)
         return Config.MANUAL_STEP_RANGES['morning']
     elif 13 <= hour <= 18:
-        # 北京 13-18点 (afternoon)
         return Config.MANUAL_STEP_RANGES['afternoon']
     elif 19 <= hour <= 24 or hour == 0:
-        # 北京 19-24点 (evening)
         return Config.MANUAL_STEP_RANGES['evening']
     else:
-        # 默认范围
         return Config.DEFAULT_MIN_STEP, Config.DEFAULT_MAX_STEP
 
 
@@ -271,7 +266,6 @@ class ZeppStepRunner:
         self.error = None
         self.actual_step = 0
 
-        # 参数校验
         user = str(user).strip()
         password = str(password).strip()
 
@@ -280,31 +274,24 @@ class ZeppStepRunner:
             self.invalid = True
             return
 
-        # 存储密码用于登录，但不长期保存明文
-        self._password = password
+        self._password = password   # 仅用于本次登录，不长期保存明文
 
-        # 处理用户名格式
+        # 手机号自动补 +86 前缀（邮箱不补）
         if not (user.startswith("+86") or "@" in user):
             user = "+86" + user
 
         self.is_phone = user.startswith("+86")
         self.user = user
 
-        # 生成虚拟IP
         self.fake_ip_addr = fake_ip()
         self.log_str += f"[虚拟IP] {self.fake_ip_addr}\n"
 
-        # 标记密码是否已清理
         self._password_cleaned = False
 
     def login(self, retry_count=0) -> Optional[str]:
-        """
-        登录并获取app_token
-        支持三级Token缓存：access_token -> login_token -> app_token
-        :return: app_token 或 None
-        """
+        """登录并获取 app_token：优先用缓存，按 app_token → login_token → access_token → 重新登录 逐级兜底"""
         if retry_count > 0:
-            self.log_str += f"[重试] 第{retry_count}次登录尝试，跳过缓存，重新获取密钥\n"
+            self.log_str += f"[重试] 第{retry_count}次登录：不用缓存，直接重新登录\n"
             return self._full_login_process(retry_count)
 
         user_token_info = self.user_tokens.get(self.user)
@@ -366,7 +353,7 @@ class ZeppStepRunner:
                 return None
             return app_token
 
-        # 无缓存Token，执行完整登录
+        # 无缓存 Token，直接走完整登录
         self.log_str += f"[信息] 用户无缓存Token，执行完整登录流程\n"
         app_token = self._full_login_process(0)
         if not app_token:
@@ -376,15 +363,13 @@ class ZeppStepRunner:
 
     def _full_login_process(self, retry_count=0) -> Optional[str]:
         """完整的登录流程，不使用缓存"""
-        self.log_str += f"[登录] 开始第{retry_count}次重新登录流程，重新获取密钥并清空缓存\n"
-
-        self.log_str += f"[密钥] 重新获取AES密钥完成\n"
+        self.log_str += f"[登录] 开始第{retry_count}次重新登录，先清掉旧缓存再重新登录\n"
 
         if self.user in self.user_tokens:
             del self.user_tokens[self.user]
-            self.log_str += f"[缓存] 已清除用户 {self.user} 的旧缓存\n"
+            self.log_str += f"[缓存] 已清除用户 {desensitize_user_name(self.user)} 的旧缓存\n"
         else:
-            self.log_str += f"[缓存] 用户 {self.user} 无旧缓存\n"
+            self.log_str += f"[缓存] 用户 {desensitize_user_name(self.user)} 无旧缓存\n"
 
         try:
             access_token, msg = zepphelper.login_access_token(self.user, self._password)
@@ -469,7 +454,7 @@ class ZeppStepRunner:
             update_msg = ""
             last_error_msg = ""
 
-            for attempt in range(Config.MAX_RETRY):
+            for attempt in range(Config.STEP_MAX_RETRY):
                 try:
                     ok, msg = zepphelper.update_step(app_token, self.user_id, step, self.fake_ip_addr)
                     if ok:
@@ -492,7 +477,7 @@ class ZeppStepRunner:
                     last_error_msg = str(e)
                     self.log_str += f"[异常] 第{attempt + 1}次尝试异常: {str(e)}\n"
 
-                if attempt < Config.MAX_RETRY - 1:
+                if attempt < Config.STEP_MAX_RETRY - 1:
                     delay = Config.RETRY_DELAY * (2 ** attempt) + random.uniform(0, 1)
                     self.log_str += f"[重试] 网络波动，等待 {delay:.1f} 秒后重试...\n"
                     time.sleep(delay)
@@ -559,14 +544,13 @@ def main():
             print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, 当前时段: {current_period or '非任务时段'}，跳过本次", flush=True)
             sys.exit(0)
 
-        # 检查2: 当前小时是否在该时段的允许执行窗口内
-        # morning: 9点或10点, evening: 19点或20点
+        # 检查2: 当前小时是否在允许执行的钟点内
         allowed_hours = Config.AUTO_EXEC_HOURS.get(current_period, set())
         if bj_time.hour not in allowed_hours:
             print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, {current_period}时段允许执行时间: {sorted(allowed_hours)}点, 当前{bj_time.hour}点不在窗口内，跳过本次", flush=True)
             sys.exit(0)
 
-        # 检查3: 今天该时段组是否已执行（时段组去重：9/10二选一, 19/20二选一）
+        # 检查3: 今天该时段是否已成功刷过（早 10/11 同组、晚 19/20 同组，各只刷一次）
         task_state = load_task_state()
         group_key = f"{current_period}_group"
         if task_state["periods"].get(group_key, False):
@@ -627,7 +611,7 @@ def main():
     if push_wechat_webhook_key and push_wechat_webhook_key != 'NO':
         push_channels.append("企业微信")
 
-    # 创建推送配置对象（用于最终结果统一推送）
+    # 创建推送配置对象
     push_config = None
     if push_channels:
         push_config = push_util.PushConfig(
@@ -655,19 +639,34 @@ def main():
         except Exception as e:
             print(f"[警告] Token保存失败: {str(e)}", flush=True)
 
-    # 保存任务状态（标记当前时段组已完成，同组内后续小时不再执行）
-    if isinstance(current_period, str) and task_state is not None:
-        group_key = f"{current_period}_group"
-        state = cast(Dict[str, Any], task_state)
-        state["periods"][group_key] = True
-        save_task_state(state)
-
     # 统计结果
     fail_count = sum(1 for r in exec_results if not r.get('success'))
 
-    # 晚间时段自动推送通知（手动触发和morning时段不推送）
+    # 去重状态：仅刷步成功才标记当天该时段“已完成”；失败不标记，留给后续触发点自动重跑
+    if fail_count == 0:
+        if isinstance(current_period, str) and task_state is not None:
+            group_key = f"{current_period}_group"
+            state = cast(Dict[str, Any], task_state)
+            state["periods"][group_key] = True
+            save_task_state(state)
+    elif task_state is not None:
+        print(f"[信息] 本次刷步失败，今日该时段不标记为已完成，当天后续触发点会自动重试", flush=True)
+
+    # 推送：仅晚间自动触发时发（手动/早上不发）。成功即推；失败只在当晚最后一次（20点保底）推一条醒目通知，避免重复告警
     if not is_manual_trigger() and current_period == 'evening' and push_channels and push_config:
-        push_util.push_results(exec_results, push_config, force_push=True)
+        last_hour = max(Config.AUTO_EXEC_HOURS.get('evening', set()), default=None)
+        is_last_attempt = (bj_time.hour == last_hour)
+        if fail_count == 0:
+            push_util.push_results(exec_results, push_config, force_push=True)
+        elif is_last_attempt:
+            # 失败且已是今晚最后一次：推醒目失败通知
+            push_util.push_results(
+                exec_results, push_config, force_push=True,
+                title="【刷步失败】今晚已用尽所有重试",
+                note="今晚所有重试都失败了，明天会自动重来，无需手动处理。"
+            )
+        else:
+            print(f"[信息] 本次刷步失败，但还没到今晚最后一次机会（{last_hour}点保底），先不发推送，等后面自动重试", flush=True)
 
     sys.exit(0 if fail_count == 0 else 1)
 
