@@ -124,7 +124,7 @@ def get_current_period(hour: int = None) -> Optional[str]:
 
 def load_task_state() -> Dict[str, Any]:
     """
-    加载任务状态文件，用于高频触发时同一天同一时段组只执行一次
+    加载任务状态文件，用于高频触发时同一天同一时段组只成功刷一次
     时段组: morning_group(早窗只成功一次), evening_group(晚窗只成功一次)
     文件结构: {"date": "2026-06-11", "periods": {"morning_group": bool, "evening_group": bool}}
     """
@@ -465,7 +465,7 @@ class ZeppStepRunner:
                     self.log_str += f"[失败] 第{attempt + 1}次尝试: {msg}\n"
 
                     if msg and any(k in msg.lower() for k in ['token', 'auth', '未授权', '登录', '失效']):
-                        self.log_str += f"[警告] 提交时发现Token可能失效，尝试重新获取密钥...\n"
+                        self.log_str += f"[警告] 提交时发现Token可能失效，尝试重新登录刷新Token...\n"
                         app_token = self._full_login_process(retry_count=attempt + 1)
                         if not app_token:
                             self.log_str += f"[失败] 重新获取Token失败，放弃步数提交\n"
@@ -553,7 +553,7 @@ def main():
         task_state = load_task_state()
         group_key = f"{current_period}_group"
         if task_state["periods"].get(group_key, False):
-            print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, {current_period}时段组({group_key})今日已执行，跳过本次", flush=True)
+            print(f"北京时间: {bj_time.strftime('%H:%M:%S')}, {current_period}时段今日已执行，跳过本次", flush=True)
             sys.exit(0)
 
     print(f"\n{'=' * 60}", flush=True)
