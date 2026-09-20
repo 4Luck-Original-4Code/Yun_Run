@@ -61,7 +61,7 @@ GitHub 自带的 `schedule` 派发时刻不可靠，推荐用 **cron-job.org** �
    - Token name：自定义；Resource owner：自己的账号（默认）。
    - Repository access：选 **Only select repositories**，勾选本仓库。
    - Permissions → Repository permissions → **Actions** → **Read and write**。
-   - Expiration：建议 90 天。
+   - Expiration：建议 90 天。到期后 cron-job.org 会因鉴权失败而无法触发工作流，需重新生成 Token 并更新到任务的 Authorization 标头。
 3. 点 **Generate token**，立即复制那串 `github_pat_...`（只显示一次，遗失只能重建）。
 
 ### 2. 在 cron-job.org 新建任务
