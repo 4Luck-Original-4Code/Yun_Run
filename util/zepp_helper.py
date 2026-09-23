@@ -12,12 +12,14 @@ from util.aes_help import encrypt_data, HM_AES_KEY, HM_AES_IV
 
 
 def _safe_net_err(e: Exception) -> str:
-    """把网络异常转成不含 URL / 凭证的简短描述，避免 login_token、userid 等随异常消息泄露到日志"""
+    """返回可安全记录到日志的异常简述（只含类型、不含 URL 与查询参数），防止 login_token、userid 等凭证泄露。"""
     if isinstance(e, requests.exceptions.Timeout):
         return "网络请求超时"
     if isinstance(e, requests.exceptions.ConnectionError):
         return "网络连接失败"
-    return f"网络异常（{type(e).__name__}）"
+    if isinstance(e, requests.exceptions.RequestException):
+        return f"网络请求失败（{type(e).__name__}）"
+    return f"内部异常（{type(e).__name__}）"
 
 
 def login_access_token(user, password) -> Tuple[Optional[str], Optional[str]]:
