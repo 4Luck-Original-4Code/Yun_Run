@@ -37,13 +37,14 @@
    - 必需：
      - `ZEPP_USER`：Zepp 账号（手机号如 `138xxxxxxxx` 或邮箱）。
      - `ZEPP_PWD`：Zepp 密码。
-     - `AES_KEY`：16 字节 AES 密钥（自定义，如 `xeNtBVqzDc6tuNTh`）。
+     - `AES_KEY`：16 字节 AES 密钥（如 `xeNtBVqzDc6tuNTh`）。
+       - 自定义AES密钥。OpenSSL若已安装，在PowerShell输入`openssl rand -hex 8`。 OpenSSL没有安装输入`winget install -e --id FireDaemon.OpenSSL --source wingetL`
    - 可选（推送通知，至少配一个才会推送）：
      - `SCKEY`：Server酱推送密钥（关注 wx 服务号「方糖」获取）。
      - `PUSH_PLUS_TOKEN`：PushPlus 推送 token（[注册地址](https://www.pushplus.plus/push1.html)）。
      - `PUSH_WECHAT_WEBHOOK_KEY`：企业微信 Webhook 的 key（获取方式见下）。
    - 企业微信 key 获取：建一个内部群（只勾自己也能建）→ 右上角「…」→ 消息推送 → 添加 → 自定义消息推送（旧版叫「群机器人 → 新建机器人」）→ 填名称 → 复制 Webhook 地址 → 取地址里 `key=` 后面那串填入。
-3. **启用 Actions 写权限**：仓库 `Settings > Actions > General > Workflow permissions`，选 `Read and write permissions` 后 Save。
+3. **（无需开写权限）**：本工作流只需读权限，已在 `run.yml` 用 `permissions: contents: read` 固定为最小权限；无需在仓库 `Settings > Actions` 里开启 Read and write permissions。
 4. **运行 Workflow**：
    - 手动触发：`Actions > 刷步数 > Run workflow`（source 默认 manual，随时可测试）。
    - 自动运行：由 cron-job.org 定时触发，配置见下一节。
