@@ -11,6 +11,15 @@ import requests
 from util.aes_help import encrypt_data, HM_AES_KEY, HM_AES_IV
 
 
+def _safe_net_err(e: Exception) -> str:
+    """把网络异常转成不含 URL / 凭证的简短描述，避免 login_token、userid 等随异常消息泄露到日志"""
+    if isinstance(e, requests.exceptions.Timeout):
+        return "网络请求超时"
+    if isinstance(e, requests.exceptions.ConnectionError):
+        return "网络连接失败"
+    return f"网络异常（{type(e).__name__}）"
+
+
 def login_access_token(user, password) -> Tuple[Optional[str], Optional[str]]:
     """登录获取access_token(加密方式)"""
     headers = {
@@ -64,7 +73,7 @@ def login_access_token(user, password) -> Tuple[Optional[str], Optional[str]]:
         return code, None
 
     except Exception as e:
-        error_msg = f"请求异常: {str(e)}"
+        error_msg = f"请求异常: {_safe_net_err(e)}"
         print(f"[异常] {error_msg}")
         return None, error_msg
 
@@ -139,7 +148,12 @@ def grant_login_tokens(access_token, device_id, is_phone=False) -> Tuple[Optiona
             "source": "com.xiaomi.hm.health:6.14.0:50818",
             "third_name": "email",
         }
-    resp = requests.post(url, data=data, headers=headers, timeout=10).json()
+    try:
+        resp = requests.post(url, data=data, headers=headers, timeout=10).json()
+    except requests.exceptions.RequestException as e:
+        return None, None, None, _safe_net_err(e)
+    except ValueError:
+        return None, None, None, "响应解析失败"
     _login_token, _userid, _app_token = None, None, None
     try:
         result = resp.get("result")
@@ -157,10 +171,17 @@ def grant_app_token(login_token: str) -> Tuple[Optional[str], Optional[str]]:
     """获取app_token，用于提交数据变更"""
     url = f"https://account-cn.huami.com/v1/client/app_tokens?app_name=com.xiaomi.hm.health&dn=api-user.huami.com%2Capi-mifit.huami.com%2Capp-analytics.huami.com&login_token={login_token}"
     headers = {'User-Agent': 'MiFit/5.3.0 (iPhone; iOS 14.7.1; Scale/3.00)'}
-    resp = requests.get(url, headers=headers, timeout=10)
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as e:
+        # 不回显 URL（其中含 login_token），仅返回脱敏描述
+        return None, _safe_net_err(e)
     if resp.status_code != 200:
         return None, "请求异常：%d" % resp.status_code
-    resp = resp.json()
+    try:
+        resp = resp.json()
+    except ValueError:
+        return None, "响应解析失败"
 
     result = resp.get("result")
     if result != "ok":
@@ -210,11 +231,17 @@ def check_app_token(app_token, userid=None) -> Tuple[bool, Optional[str]]:
         "lang": "zh_CN",
         "clientid": "428135909242707968"
     }
-    response = requests.get(url, params=params, headers=headers, timeout=10)
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as e:
+        # 不回显 URL（其中含 userid），仅返回脱敏描述
+        return False, _safe_net_err(e)
     if response.status_code != 200:
         return False, "请求异常：%d" % response.status_code
-    response = response.json()
-    message = response["message"]
+    try:
+        message = response.json().get("message")
+    except ValueError:
+        return False, "响应解析失败"
     if message == "success":
         return True, None
     else:
