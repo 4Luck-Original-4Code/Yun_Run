@@ -8,6 +8,7 @@ Zepp 自动刷步数主程序
 import json
 import os
 import random
+import re
 import sys
 import time
 import traceback
@@ -88,6 +89,20 @@ def desensitize_user_name(user: str) -> str:
     if length < 3:
         return "请配置正确的手机号或者邮箱"
     return user[:2] + "*" * (length - 2)
+
+
+# URL 查询参数中可能携带凭证/PII 的键，写日志前统一打码（防御性兜底）
+_SECRET_PARAM_RE = re.compile(
+    r'(login_token|access_token|app_token|refresh_token|apptoken|access|token|userid|user_id|password|code)=([^&\s]+)',
+    re.IGNORECASE,
+)
+
+
+def redact_secrets(text) -> str:
+    """把字符串里 URL 查询参数中的敏感值打码，避免 login_token / userid 等泄露到日志"""
+    if not text:
+        return text
+    return _SECRET_PARAM_RE.sub(lambda m: f"{m.group(1)}=***", str(text))
 
 
 def is_manual_trigger() -> bool:
@@ -310,7 +325,7 @@ class ZeppStepRunner:
                         return app_token
                     self.log_str += f"[详细] app_token验证失败: {msg}\n"
                 except Exception as e:
-                    self.log_str += f"[警告] app_token验证异常: {str(e)}\n"
+                    self.log_str += f"[警告] app_token验证异常: {redact_secrets(str(e))}\n"
             else:
                 self.log_str += "[警告] 缓存中不存在 app_token\n"
 
@@ -325,7 +340,7 @@ class ZeppStepRunner:
                     return app_token
                 self.log_str += f"[详细] login_token刷新失败: {msg}\n"
             except Exception as e:
-                self.log_str += f"[警告] login_token刷新异常: {str(e)}\n"
+                self.log_str += f"[警告] login_token刷新异常: {redact_secrets(str(e))}\n"
 
             self.log_str += f"[警告] login_token无效，尝试用access_token刷新...\n"
 
@@ -343,7 +358,7 @@ class ZeppStepRunner:
                     return app_token
                 self.log_str += f"[详细] access_token刷新失败: {msg}\n"
             except Exception as e:
-                self.log_str += f"[警告] access_token刷新异常: {str(e)}\n"
+                self.log_str += f"[警告] access_token刷新异常: {redact_secrets(str(e))}\n"
 
             self.log_str += f"[警告] access_token无效，重新登录...\n"
             app_token = self._full_login_process(0)
@@ -378,8 +393,8 @@ class ZeppStepRunner:
                 return None
             self.log_str += "[成功] 获取access_token\n"
         except Exception as e:
-            self.log_str += f"[异常] 登录异常: {str(e)}\n"
-            self.error = f"登录异常: {str(e)}"
+            self.log_str += f"[异常] 登录异常: {redact_secrets(str(e))}\n"
+            self.error = f"登录异常: {redact_secrets(str(e))}"
             return None
 
         try:
@@ -404,8 +419,8 @@ class ZeppStepRunner:
             self.log_str += "[成功] 登录成功，获取所有Token\n"
             return app_token
         except Exception as e:
-            self.log_str += f"[异常] 获取Token异常: {str(e)}\n"
-            self.error = f"获取Token异常: {str(e)}"
+            self.log_str += f"[异常] 获取Token异常: {redact_secrets(str(e))}\n"
+            self.error = f"获取Token异常: {redact_secrets(str(e))}"
             return None
 
     def _clean_password(self):
@@ -514,9 +529,9 @@ def run_single_account(user: str, password: str,
             "step": runner.actual_step if success else None
         }
     except Exception as e:
-        error_msg = f"[异常] {str(e)}"
+        error_msg = f"[异常] {redact_secrets(str(e))}"
         log_str += error_msg + "\n"
-        log_str += traceback.format_exc()
+        log_str += redact_secrets(traceback.format_exc())
 
         exec_result = {
             "user": desensitize_user_name(user),
@@ -627,8 +642,8 @@ def main():
         )
         exec_results = [result]
     except Exception as e:
-        print(f"\n[错误] 执行过程中发生异常: {str(e)}", flush=True)
-        traceback.print_exc()
+        print(f"\n[错误] 执行过程中发生异常: {redact_secrets(str(e))}", flush=True)
+        print(redact_secrets(traceback.format_exc()), flush=True)
         sys.exit(1)
 
     # 保存 Token 缓存
