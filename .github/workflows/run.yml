@@ -5,14 +5,22 @@ on:
   workflow_dispatch:
     inputs:
       source:
-        description: '触发来源（cron-job 定时触发填 cron）'
-        required: false
-        default: 'manual'
+        description: '触发来源：manual=手动测试，cron=定时触发'
+        type: choice
+        options:
+          - manual
+          - cron
+        default: manual
 
 # 串行执行，避免并发运行争抢任务状态与Token缓存
 concurrency:
   group: zepp-step-run
   cancel-in-progress: false
+
+# 最小权限：仅需读代码 + 读取/下载 artifact，无需任何写权限
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   # 由 cron-job.org 在目标时间点通过 workflow_dispatch 触发，
